@@ -14,6 +14,7 @@ import {
   PlusCircle,
   Banknote,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import { UserRole } from '@/types';
 import { Badge } from '../ui/Badge';
@@ -54,6 +55,11 @@ export function Sidebar({
       icon: <PlusCircle size={18} />,
     },
     {
+      label: 'Shift History & Logs',
+      href: '/shifts',
+      icon: <Clock size={18} />,
+    },
+    {
       label: 'Cash Ledger & Owner',
       href: '/cash',
       icon: <Banknote size={18} />,
@@ -69,7 +75,7 @@ export function Sidebar({
       icon: <BookOpen size={18} />,
     },
     {
-      label: 'Employees',
+      label: 'Employees & Staff',
       href: '/employees',
       icon: <Users size={18} />,
     },
@@ -114,10 +120,12 @@ export function Sidebar({
         <nav className="space-y-1">
           {navItems.map((item) => {
             const isActive =
-              pathname === item.href ||
-              (item.href !== '/dashboard' &&
-                item.href !== '/admin/dashboard' &&
-                pathname.startsWith(item.href));
+              item.href === '/shifts'
+                ? pathname === '/shifts'
+                : pathname === item.href ||
+                  (item.href !== '/dashboard' &&
+                    item.href !== '/admin/dashboard' &&
+                    pathname.startsWith(item.href));
 
             return (
               <Link
