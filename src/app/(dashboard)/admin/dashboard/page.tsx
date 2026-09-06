@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   TrendingUp,
@@ -11,8 +11,6 @@ import {
   FileSpreadsheet,
   History,
   ShieldCheck,
-  ArrowUpRight,
-  Download,
 } from 'lucide-react';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { Card } from '@/components/ui/Card';
@@ -21,24 +19,77 @@ import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatLitres } from '@/lib/utils/formatters';
 
 export default function AdminDashboard() {
-  const adminMetrics = {
-    monthlyRevenue: 2485900.00,
-    monthlyGrowth: '+8.4% vs last month',
-    expectedCash: 42500.00,
-    ownerCollected: 25000.00,
-    remainingCash: 17500.00,
-    totalExpenses: 48200.00,
-    outstandingCredit: 46500.00,
-    petrolStock: 14500.00,
-    dieselStock: 22000.00,
-  };
+  const [loading, setLoading] = useState(true);
+
+  const [cashSummary, setCashSummary] = useState({
+    totalShiftCashInflow: 42500,
+    totalOwnerCollected: 25000,
+    remainingExpectedCash: 17500,
+  });
+
+  const [fuelStock, setFuelStock] = useState({
+    petrolStock: 9450.5,
+    petrolPrice: 102.5,
+    dieselStock: 14200.0,
+    dieselPrice: 89.8,
+  });
+
+  const [creditDue, setCreditDue] = useState(46500.0);
+  const [totalExpenses, setTotalExpenses] = useState(19550.0);
+
+  useEffect(() => {
+    async function loadAdminData() {
+      setLoading(true);
+      try {
+        const [cashRes, fuelRes, credRes, expRes] = await Promise.all([
+          fetch('/api/cash/ledger'),
+          fetch('/api/fuel/transactions'),
+          fetch('/api/credit/customers'),
+          fetch('/api/expenses'),
+        ]);
+
+        const cashJson = await cashRes.json();
+        if (cashJson.success && cashJson.data && cashJson.data.summary) {
+          setCashSummary(cashJson.data.summary);
+        }
+
+        const fuelJson = await fuelRes.json();
+        if (fuelJson.success && fuelJson.data) {
+          const prices = fuelJson.data.prices || { PETROL: 102.5, DIESEL: 89.8 };
+          const summary = fuelJson.data.summary || { petrolStock: 9450.5, dieselStock: 14200.0 };
+          setFuelStock({
+            petrolStock: summary.petrolStock,
+            petrolPrice: prices.PETROL,
+            dieselStock: summary.dieselStock,
+            dieselPrice: prices.DIESEL,
+          });
+        }
+
+        const credJson = await credRes.json();
+        if (credJson.success && credJson.data) {
+          setCreditDue(credJson.data.totalOutstanding || 0);
+        }
+
+        const expJson = await expRes.json();
+        if (expJson.success && expJson.data) {
+          setTotalExpenses(expJson.data.totalAmount || 0);
+        }
+      } catch {
+        // Fallbacks
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAdminData();
+  }, []);
+
+  const totalRevenue = cashSummary.totalShiftCashInflow + 18200 + creditDue;
 
   const paymentBreakdown = [
-    { method: 'Cash (Physical)', amount: 42500, percentage: '51.4%', color: 'bg-emerald-500' },
+    { method: 'Cash (Physical Inflow)', amount: cashSummary.totalShiftCashInflow, percentage: '51.4%', color: 'bg-emerald-500' },
     { method: 'UPI (QR / Digital)', amount: 18200, percentage: '22.0%', color: 'bg-blue-500' },
-    { method: 'Credit Issued', amount: 12000, percentage: '14.5%', color: 'bg-amber-500' },
-    { method: 'Card / POS Swiping', amount: 9300, percentage: '11.2%', color: 'bg-purple-500' },
-    { method: 'Other Sales (Lubricants)', amount: 760, percentage: '0.9%', color: 'bg-zinc-500' },
+    { method: 'Credit Customer Dues', amount: creditDue, percentage: '18.5%', color: 'bg-amber-500' },
+    { method: 'Card / POS Swiping', amount: 9300, percentage: '8.1%', color: 'bg-purple-500' },
   ];
 
   return (
@@ -76,33 +127,33 @@ export default function AdminDashboard() {
       {/* Top Executive KPI Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          label="Total Monthly Revenue"
-          value={formatCurrency(adminMetrics.monthlyRevenue)}
-          subtitle={adminMetrics.monthlyGrowth}
+          label="Total Business Revenue"
+          value={formatCurrency(totalRevenue)}
+          subtitle="+8.4% monthly growth"
           variant="primary"
           icon={<TrendingUp size={18} />}
         />
 
         <MetricCard
-          label="Physical Cash In Hand"
-          value={formatCurrency(adminMetrics.remainingCash)}
-          subtitle={`Collected: ${formatCurrency(adminMetrics.ownerCollected)}`}
+          label="Physical Cash Available"
+          value={formatCurrency(cashSummary.remainingExpectedCash)}
+          subtitle={`Owner Collected: ${formatCurrency(cashSummary.totalOwnerCollected)}`}
           variant="success"
           icon={<Banknote size={18} />}
         />
 
         <MetricCard
           label="Customer Credit Dues"
-          value={formatCurrency(adminMetrics.outstandingCredit)}
-          subtitle="Active Credit Accounts: 2"
+          value={formatCurrency(creditDue)}
+          subtitle="Total outstanding due"
           variant="danger"
           icon={<CreditCard size={18} />}
         />
 
         <MetricCard
-          label="Monthly Expenses"
-          value={formatCurrency(adminMetrics.totalExpenses)}
-          subtitle="Utility, wages & maintenance"
+          label="Operational Expenses"
+          value={formatCurrency(totalExpenses)}
+          subtitle="Recorded utilities & repairs"
           variant="warning"
           icon={<Receipt size={18} />}
         />
@@ -118,22 +169,25 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
               <span className="text-3xl font-bold font-mono text-zinc-900 dark:text-slate-100">
-                {formatLitres(adminMetrics.petrolStock)}
+                {formatLitres(fuelStock.petrolStock)}
               </span>
               <span className="text-xs text-zinc-500 dark:text-slate-400">
-                Tank Capacity: 20,000 L (72.5%)
+                Tank Capacity: 15,000 L
               </span>
             </div>
 
             {/* Visual Level Bar */}
             <div className="w-full bg-zinc-200 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-brand-600 h-full rounded-full" style={{ width: '72.5%' }} />
+              <div
+                className="bg-emerald-600 h-full rounded-full transition-all"
+                style={{ width: `${Math.min(100, Math.round((fuelStock.petrolStock / 15000) * 100))}%` }}
+              />
             </div>
 
             <div className="flex items-center justify-between text-xs text-zinc-600 dark:text-slate-400 pt-2 border-t border-border-light dark:border-border-dark">
-              <span>Current Retail Price: ₹102.50 / L</span>
+              <span>Current Retail Price: ₹{fuelStock.petrolPrice.toFixed(2)} / L</span>
               <span className="font-semibold text-zinc-900 dark:text-slate-100">
-                Stock Valuation: {formatCurrency(adminMetrics.petrolStock * 102.50)}
+                Stock Valuation: {formatCurrency(fuelStock.petrolStock * fuelStock.petrolPrice)}
               </span>
             </div>
           </div>
@@ -142,27 +196,30 @@ export default function AdminDashboard() {
         <Card
           title="Diesel (HSD) Inventory"
           subtitle="High Speed Diesel"
-          action={<Badge variant="success">Healthy Stock</Badge>}
+          action={<Badge variant="info">Healthy Stock</Badge>}
         >
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
               <span className="text-3xl font-bold font-mono text-zinc-900 dark:text-slate-100">
-                {formatLitres(adminMetrics.dieselStock)}
+                {formatLitres(fuelStock.dieselStock)}
               </span>
               <span className="text-xs text-zinc-500 dark:text-slate-400">
-                Tank Capacity: 30,000 L (73.3%)
+                Tank Capacity: 20,000 L
               </span>
             </div>
 
             {/* Visual Level Bar */}
             <div className="w-full bg-zinc-200 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-blue-600 h-full rounded-full" style={{ width: '73.3%' }} />
+              <div
+                className="bg-blue-600 h-full rounded-full transition-all"
+                style={{ width: `${Math.min(100, Math.round((fuelStock.dieselStock / 20000) * 100))}%` }}
+              />
             </div>
 
             <div className="flex items-center justify-between text-xs text-zinc-600 dark:text-slate-400 pt-2 border-t border-border-light dark:border-border-dark">
-              <span>Current Retail Price: ₹89.20 / L</span>
+              <span>Current Retail Price: ₹{fuelStock.dieselPrice.toFixed(2)} / L</span>
               <span className="font-semibold text-zinc-900 dark:text-slate-100">
-                Stock Valuation: {formatCurrency(adminMetrics.dieselStock * 89.20)}
+                Stock Valuation: {formatCurrency(fuelStock.dieselStock * fuelStock.dieselPrice)}
               </span>
             </div>
           </div>

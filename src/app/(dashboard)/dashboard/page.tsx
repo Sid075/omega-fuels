@@ -5,13 +5,10 @@ import Link from 'next/link';
 import {
   Banknote,
   Fuel,
-  Users,
   CreditCard,
   PlusCircle,
   ArrowUpRight,
-  ShieldCheck,
   TrendingUp,
-  Clock,
   CheckCircle2,
 } from 'lucide-react';
 import { MetricCard } from '@/components/ui/MetricCard';
@@ -25,28 +22,66 @@ export default function ManagerDashboard() {
   const [shifts, setShifts] = useState<ShiftRecordWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [cashSummary, setCashSummary] = useState({
+    totalShiftCashInflow: 42500,
+    totalOwnerCollected: 25000,
+    remainingExpectedCash: 17500,
+  });
+
+  const [fuelStock, setFuelStock] = useState({
+    petrolStock: 9450.5,
+    petrolPrice: 102.5,
+    dieselStock: 14200.0,
+    dieselPrice: 89.8,
+  });
+
+  const [creditDue, setCreditDue] = useState(46500.0);
+
   useEffect(() => {
-    async function loadData() {
+    async function loadDashboardData() {
+      setLoading(true);
       try {
-        const res = await fetch('/api/shifts');
-        const json = await res.json();
-        if (json.success && json.data) {
-          setShifts(json.data);
+        const [shiftsRes, cashRes, fuelRes, credRes] = await Promise.all([
+          fetch('/api/shifts'),
+          fetch('/api/cash/ledger'),
+          fetch('/api/fuel/transactions'),
+          fetch('/api/credit/customers'),
+        ]);
+
+        const shiftsJson = await shiftsRes.json();
+        if (shiftsJson.success && shiftsJson.data) setShifts(shiftsJson.data);
+
+        const cashJson = await cashRes.json();
+        if (cashJson.success && cashJson.data && cashJson.data.summary) {
+          setCashSummary(cashJson.data.summary);
+        }
+
+        const fuelJson = await fuelRes.json();
+        if (fuelJson.success && fuelJson.data) {
+          const prices = fuelJson.data.prices || { PETROL: 102.5, DIESEL: 89.8 };
+          const summary = fuelJson.data.summary || { petrolStock: 9450.5, dieselStock: 14200.0 };
+          setFuelStock({
+            petrolStock: summary.petrolStock,
+            petrolPrice: prices.PETROL,
+            dieselStock: summary.dieselStock,
+            dieselPrice: prices.DIESEL,
+          });
+        }
+
+        const credJson = await credRes.json();
+        if (credJson.success && credJson.data) {
+          setCreditDue(credJson.data.totalOutstanding || 0);
         }
       } catch {
-        // Fallback
+        // Fallback defaults retained
       } finally {
         setLoading(false);
       }
     }
-    loadData();
+    loadDashboardData();
   }, []);
 
-  // Calculate live totals from shifts
-  const totalSales = shifts.reduce((sum, s) => sum + s.total_sales, 0) || 82760.00;
-  const totalCash = shifts.reduce((sum, s) => sum + s.cash_amount, 0) || 42500.00;
-  const ownerCollected = 25000.00;
-  const remainingCash = Math.max(0, totalCash - ownerCollected);
+  const totalSales = shifts.reduce((sum, s) => sum + s.total_sales, 0) || 82760.0;
 
   return (
     <div className="space-y-6">
@@ -57,7 +92,7 @@ export default function ManagerDashboard() {
             Operations Dashboard
           </h2>
           <p className="text-xs text-zinc-500 dark:text-slate-400 mt-0.5">
-            Real-time shift records, cash reconciliation & fuel inventory
+            Real-time shift records, cash drawer reconciliation & fuel inventory
           </p>
         </div>
 
@@ -91,7 +126,7 @@ export default function ManagerDashboard() {
 
           <MetricCard
             label="Physical Cash Inflow"
-            value={formatCurrency(totalCash)}
+            value={formatCurrency(cashSummary.totalShiftCashInflow)}
             subtitle="Total shift cash received"
             variant="info"
             icon={<Banknote size={18} />}
@@ -99,17 +134,17 @@ export default function ManagerDashboard() {
 
           <MetricCard
             label="Owner Cash Collected"
-            value={formatCurrency(ownerCollected)}
+            value={formatCurrency(cashSummary.totalOwnerCollected)}
             subtitle="Collected mid-shift by owner"
             variant="warning"
             icon={<ArrowUpRight size={18} />}
           />
 
           <MetricCard
-            label="Remaining Available Cash"
-            value={formatCurrency(remainingCash)}
+            label="Remaining Drawer Cash"
+            value={formatCurrency(cashSummary.remainingExpectedCash)}
             subtitle="Expected physical cash in drawer"
-            variant="success"
+            variant={cashSummary.remainingExpectedCash >= 0 ? 'success' : 'danger'}
             icon={<CheckCircle2 size={18} />}
           />
         </div>
@@ -119,30 +154,30 @@ export default function ManagerDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <MetricCard
           label="Petrol Stock (MS)"
-          value={formatLitres(14500.0)}
-          subtitle="Rate: ₹102.50 / L"
+          value={formatLitres(fuelStock.petrolStock)}
+          subtitle={`Rate: ₹${fuelStock.petrolPrice.toFixed(2)} / L`}
           variant="primary"
           icon={<Fuel size={18} />}
         />
 
         <MetricCard
           label="Diesel Stock (HSD)"
-          value={formatLitres(22000.0)}
-          subtitle="Rate: ₹89.20 / L"
+          value={formatLitres(fuelStock.dieselStock)}
+          subtitle={`Rate: ₹${fuelStock.dieselPrice.toFixed(2)} / L`}
           variant="info"
           icon={<Fuel size={18} />}
         />
 
         <MetricCard
           label="Outstanding Credit"
-          value={formatCurrency(46500.0)}
+          value={formatCurrency(creditDue)}
           subtitle="Total customer dues"
           variant="danger"
           icon={<CreditCard size={18} />}
         />
       </div>
 
-      {/* Recent Operational Shifts Table / Mobile Cards */}
+      {/* Recent Operational Shifts Table */}
       <Card
         title="Today's Shift Entries"
         subtitle="Completed nozzle operator shift submissions"
@@ -182,7 +217,7 @@ export default function ManagerDashboard() {
                     <th className="px-4 py-3 text-center">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                <tbody className="divide-y divide-border-light dark:border-border-dark">
                   {shifts.slice(0, 5).map((shift) => (
                     <tr
                       key={shift.id}
@@ -224,7 +259,7 @@ export default function ManagerDashboard() {
               </table>
             </div>
 
-            {/* Mobile View: High readability Card list */}
+            {/* Mobile View */}
             <div className="md:hidden space-y-3">
               {shifts.slice(0, 5).map((shift) => (
                 <div

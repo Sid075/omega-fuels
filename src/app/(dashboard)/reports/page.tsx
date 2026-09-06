@@ -36,7 +36,9 @@ export default function ReportsPage() {
         </div>
 
         <Button
-          onClick={() => alert(`Generating multi-sheet ${exportType} workbook export...`)}
+          onClick={() => {
+            window.location.href = `/api/reports/export?format=${exportType.toLowerCase()}&dateRange=${dateRange}&scope=${scope}`;
+          }}
           icon={<Download size={16} />}
         >
           Download Export ({exportType})
