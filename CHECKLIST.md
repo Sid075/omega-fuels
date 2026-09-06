@@ -48,18 +48,17 @@ This checklist tracks the end-to-end development of the **OMEGA FUELS** mobile-f
 
 ---
 
-## ⏳ Phase 4: Fuel Inventory, Price Management & Deliveries (IN PROGRESS)
-- [ ] Fuel price management interface (`/fuel`): Petrol (MS) & Diesel (HSD) price history
-- [ ] Fuel stock transaction engine (`fuel_stock_transactions`)
-- [ ] New Fuel Delivery entry: Litres, density at 15°C, supplier, challan/ref no., buying price
-- [ ] Test Fuel Usage entry: Litres, snapshot price, calculated value/loss
-- [ ] Generator Fuel Usage entry: Litres, backup generator notes
-- [ ] Stock adjustment entry with mandatory reason and audit log
-- [ ] Live petrol and diesel tank level gauges and stock movement stream
+## 🏁 Phase 4: Fuel Inventory, Price Management & Deliveries (COMPLETED)
+- [x] Fuel price management interface (`/fuel`): Petrol (MS) & Diesel (HSD) active rate cards & history
+- [x] Fuel stock transaction engine (`fuel_stock_transactions`): Stock calculation formula
+- [x] Tanker Fuel Delivery entry (`RecordDeliveryModal`): Litres, buying price, supplier, invoice #, truck #, density @ 15°C
+- [x] Non-sale Fuel Usage entry (`RecordUsageModal`): Nozzle calibration test litres & station backup generator fuel
+- [x] Tank Stock Adjustment entry (`AdjustStockModal`): Volume gain/loss with mandatory audit reason
+- [x] Live petrol and diesel tank level visual progress gauges, capacity % & stock valuation
 
 ---
 
-## ⏳ Phase 5: Credit Book & Customer Ledger
+## ⏳ Phase 5: Credit Book & Customer Ledger (IN PROGRESS)
 - [ ] Credit Customer directory (`/credit`): Name, phone, notes, active status
 - [ ] Credit Given entry (linkable from shift or direct)
 - [ ] Credit Repayment entry:
