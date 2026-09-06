@@ -35,26 +35,27 @@ This checklist tracks the end-to-end development of the **OMEGA FUELS** mobile-f
 
 ---
 
-## ⏳ Phase 3: Central Cash Ledger & Owner Cash Collection
-- [ ] Central Cash Ledger transaction engine (`cash_ledger`)
-- [ ] Shift Cash event handler (positive cash flow)
-- [ ] Credit Repayment Cash event handler (positive cash flow)
-- [ ] Owner Cash Collection interface (`/cash`):
+## 🏁 Phase 3: Central Cash Ledger & Owner Cash Collection (COMPLETED)
+- [x] Central Cash Ledger transaction engine (`cash_ledger`)
+- [x] Shift Cash event handler (positive cash flow)
+- [x] Credit Repayment Cash event handler (positive cash flow)
+- [x] Owner Cash Collection interface (`/cash`):
   - Amount, date/time, notes, recorded by
   - Immediate negative ledger entry
   - Running expected available cash calculation (Zero double-counting)
-- [ ] Cash reconciliation dashboard card and daily cash balance check
+- [x] Cash drawer manual adjustment modal (`CashAdjustmentModal`) with mandatory reason
+- [x] Cash reconciliation dashboard card and live transaction filter toolbar
 
 ---
 
-## ⏳ Phase 4: Fuel Inventory, Price Management & Deliveries
-- [ ] Fuel price management interface (`/fuel`): Petrol & Diesel price history
+## ⏳ Phase 4: Fuel Inventory, Price Management & Deliveries (IN PROGRESS)
+- [ ] Fuel price management interface (`/fuel`): Petrol (MS) & Diesel (HSD) price history
 - [ ] Fuel stock transaction engine (`fuel_stock_transactions`)
-- [ ] New Fuel Delivery entry: Litres, cost/litre, total cost, supplier, challan/ref no.
+- [ ] New Fuel Delivery entry: Litres, density at 15°C, supplier, challan/ref no., buying price
 - [ ] Test Fuel Usage entry: Litres, snapshot price, calculated value/loss
 - [ ] Generator Fuel Usage entry: Litres, backup generator notes
 - [ ] Stock adjustment entry with mandatory reason and audit log
-- [ ] Live petrol and diesel stock level indicators (Litres)
+- [ ] Live petrol and diesel tank level gauges and stock movement stream
 
 ---
 

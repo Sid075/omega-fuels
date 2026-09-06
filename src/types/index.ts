@@ -70,9 +70,11 @@ export interface FuelPrice {
   id: string;
   fuel_type: FuelType;
   price_per_litre: number;
-  effective_from: string;
+  effective_at: string;
+  effective_from?: string;
   effective_to?: string | null;
-  updated_by: string;
+  recorded_by?: string;
+  updated_by?: string;
   created_at: string;
 }
 
@@ -84,14 +86,29 @@ export type StockTransactionType =
   | 'GENERATOR_USAGE'
   | 'ADJUSTMENT';
 
+export type FuelTransactionType = StockTransactionType;
+
+export interface FuelTank {
+  id: string;
+  name: string;
+  fuel_type: FuelType;
+  capacity_litres: number;
+  current_stock_litres: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FuelStockTransaction {
   id: string;
   fuel_type: FuelType;
+  tank_id?: string;
   transaction_type: StockTransactionType;
   quantity_litres: number;
   unit_cost?: number | null;
   reference_type?: string | null;
   reference_id?: string | null;
+  notes?: string | null;
   reason?: string | null;
   created_by: string;
   created_at: string;
