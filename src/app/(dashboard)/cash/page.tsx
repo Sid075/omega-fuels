@@ -114,7 +114,7 @@ export default function CashLedgerPage() {
           label="Credit Cash Repayments"
           value={formatCurrency(summary.totalCreditCashInflow)}
           subtitle="Cash paid towards credit"
-          variant="default"
+          variant="primary"
           icon={<ArrowDownLeft size={18} />}
         />
 
