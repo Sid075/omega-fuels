@@ -10,6 +10,7 @@ import {
 import { logAuditAction } from './audit.service';
 import { getCurrentUser } from './auth.service';
 import { getEmployeeById } from './employee.service';
+import { appendShiftCashToLedger } from './cash.service';
 
 export interface ShiftRecordWithDetails extends Shift {
   payments: ShiftPayment[];
@@ -312,6 +313,9 @@ export async function createShift(input: CreateShiftInput): Promise<ShiftRecordW
 
   // Local fallback persistence
   localShifts.unshift(newShift);
+  if (cashAmount > 0) {
+    appendShiftCashToLedger(shiftId, cashAmount, employee?.name || 'Staff', userId);
+  }
 
   await logAuditAction({
     actorUserId: userId,
