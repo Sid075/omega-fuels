@@ -58,28 +58,22 @@ This checklist tracks the end-to-end development of the **OMEGA FUELS** mobile-f
 
 ---
 
-## ⏳ Phase 5: Credit Book & Customer Ledger (IN PROGRESS)
-- [ ] Credit Customer directory (`/credit`): Name, phone, notes, active status
-- [ ] Credit Given entry (linkable from shift or direct)
-- [ ] Credit Repayment entry:
-  - Cash Repayment -> credits customer balance AND updates Cash Ledger
-  - UPI / Bank Transfer Repayment -> credits customer balance without affecting physical cash
-- [ ] Customer statement / ledger history view
-- [ ] Total outstanding credit balance calculation
+## 🏁 Phase 5: Credit Book & Customer Ledger (COMPLETED)
+- [x] Credit Customer directory (`/credit`): Name, phone, notes, active status
+- [x] Credit Customer modal (`CreditCustomerModal`): Create & Edit fleet customer accounts
+- [x] Credit Repayment modal (`RecordRepaymentModal`):
+  - Cash Repayment -> credits customer balance AND appends positive inflow to Cash Ledger
+  - UPI / Bank Transfer Repayment -> credits customer balance without double counting physical cash
+- [x] Customer statement / ledger history modal (`CustomerStatementModal`): Itemized debit/credit history & print statement
+- [x] Live total outstanding credit balance KPI calculation
 
 ---
 
-## ⏳ Phase 6: Expenses, Reports & Analytics
-- [ ] Expense Tracker (`/expenses`): Category, description, amount, date
-- [ ] Operational Manager Dashboard (`/dashboard`): Today's sales, expected cash, remaining cash, fuel stock, credit outstanding, quick actions
-- [ ] Executive Admin Dashboard (`/admin/dashboard`): Revenue KPIs, payment method breakdown, fuel usage/loss, cash reconciliation, trend charts
-- [ ] Reports Engine (`/reports`):
-  - Daily, Weekly, Monthly, Custom Date Range
-  - Employee-wise sales performance
-  - Fuel stock movement report
-  - Credit customer aging report
-  - Expense breakdown report
-  - Owner collection summary report
+## ⏳ Phase 6: Expenses, Reports & Analytics (IN PROGRESS)
+- [ ] Operational Expense Tracker (`/expenses`): Category, description, amount, date
+- [ ] Manager Operational Dashboard (`/dashboard`): Today's sales, expected cash, fuel stock gauges, credit balance, quick actions
+- [ ] Executive Admin Dashboard (`/admin/dashboard`): Total revenue KPIs, payment breakdown charts, stock loss, cash reconciliation
+- [ ] Reporting Engine (`/reports`): Daily, weekly, monthly, custom date range filtering
 
 ---
 
