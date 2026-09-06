@@ -50,14 +50,28 @@ export default function NewShiftEntryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [creditCustomers, setCreditCustomers] = useState<any[]>([]);
+
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch('/api/employees?status=ACTIVE');
-        const json = await res.json();
-        if (json.success && json.data && json.data.length > 0) {
-          setEmployees(json.data);
-          setEmployeeId(json.data[0].id);
+        const [empRes, credRes] = await Promise.all([
+          fetch('/api/employees?status=ACTIVE'),
+          fetch('/api/credit/customers'),
+        ]);
+
+        const empJson = await empRes.json();
+        if (empJson.success && empJson.data && empJson.data.length > 0) {
+          setEmployees(empJson.data);
+          setEmployeeId(empJson.data[0].id);
+        }
+
+        const credJson = await credRes.json();
+        if (credJson.success && credJson.data && credJson.data.customers) {
+          setCreditCustomers(credJson.data.customers);
+          if (credJson.data.customers.length > 0) {
+            setCreditCustomerId(credJson.data.customers[0].id);
+          }
         }
       } catch {
         // Fallback default
@@ -337,9 +351,15 @@ export default function NewShiftEntryPage() {
                 onChange={(e) => setCreditCustomerId(e.target.value)}
                 className="w-full min-h-touch px-3.5 py-2 rounded-sm border border-amber-300 dark:border-amber-800 bg-surface-light dark:bg-surface-dark text-xs font-semibold text-zinc-900 dark:text-slate-100 outline-none"
               >
-                <option value="cust_01">Apex Logistics Fleet Ltd (Acc: #cust_01)</option>
-                <option value="cust_02">Green Earth Transport (Acc: #cust_02)</option>
-                <option value="walk_in_credit">Other Walk-in Fleet / Signed Chit</option>
+                {creditCustomers.length === 0 ? (
+                  <option value="walk_in_credit">Walk-in Fleet / Signed Chit</option>
+                ) : (
+                  creditCustomers.map((cust) => (
+                    <option key={cust.id} value={cust.id}>
+                      {cust.name} (Due: ₹{(cust.outstanding_balance || 0).toLocaleString('en-IN')})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           )}
