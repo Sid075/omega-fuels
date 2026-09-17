@@ -1,4 +1,5 @@
 import { CreditTransaction } from '@/types';
+import { safeRound } from './cash';
 
 /**
  * Calculate customer outstanding balance strictly from credit transaction ledger.
@@ -15,21 +16,28 @@ export function calculateCreditBalance(transactions: CreditTransaction[], custom
   let totalAdjustments = 0;
 
   for (const tx of filtered) {
+    const amt = Number(tx.amount) || 0;
     if (tx.transaction_type === 'CREDIT_GIVEN') {
-      totalCreditGiven += tx.amount;
+      totalCreditGiven += amt;
     } else if (tx.transaction_type === 'PAYMENT_RECEIVED') {
-      totalPaymentsReceived += tx.amount;
+      totalPaymentsReceived += amt;
       if (tx.payment_method === 'CASH') {
-        totalCashRepayments += tx.amount;
+        totalCashRepayments += amt;
       } else {
-        totalDigitalRepayments += tx.amount;
+        totalDigitalRepayments += amt;
       }
     } else if (tx.transaction_type === 'ADJUSTMENT') {
-      totalAdjustments += tx.amount;
+      totalAdjustments += amt;
     }
   }
 
-  const outstandingBalance = totalCreditGiven - totalPaymentsReceived + totalAdjustments;
+  totalCreditGiven = safeRound(totalCreditGiven);
+  totalPaymentsReceived = safeRound(totalPaymentsReceived);
+  totalCashRepayments = safeRound(totalCashRepayments);
+  totalDigitalRepayments = safeRound(totalDigitalRepayments);
+  totalAdjustments = safeRound(totalAdjustments);
+
+  const outstandingBalance = safeRound(totalCreditGiven - totalPaymentsReceived + totalAdjustments);
 
   return {
     totalCreditGiven,

@@ -15,10 +15,24 @@ export async function middleware(request: NextRequest) {
 
   const demoRole = request.cookies.get('omega_demo_role')?.value;
   const userSession = request.cookies.get('omega_user_session')?.value;
-  const isAuth = !!(demoRole || userSession);
 
-  // 1. Unauthenticated users trying to access protected routes -> /login
+  let userRole = demoRole;
+  if (!userRole && userSession) {
+    try {
+      const parsed = JSON.parse(userSession);
+      userRole = parsed?.role;
+    } catch {
+      // Invalid session cookie
+    }
+  }
+
+  const isAuth = !!(userRole || userSession);
+
+  // 1. Unauthenticated requests
   if (!isAuth && pathname !== '/login') {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ success: false, error: 'Unauthorized. Please sign in.' }, { status: 401 });
+    }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
@@ -26,19 +40,19 @@ export async function middleware(request: NextRequest) {
 
   // 2. Authenticated users visiting /login -> redirect to dashboard
   if (isAuth && pathname === '/login') {
-    const target = demoRole === 'ADMIN' ? '/admin/dashboard' : '/dashboard';
+    const target = userRole === 'ADMIN' ? '/admin/dashboard' : '/dashboard';
     return NextResponse.redirect(new URL(target, request.url));
   }
 
-  // 3. Manager trying to access /admin/* -> redirect to /dashboard
-  if (isAuth && demoRole === 'MANAGER' && pathname.startsWith('/admin')) {
+  // 3. Non-admin trying to access /admin/* -> redirect to /dashboard
+  if (isAuth && pathname.startsWith('/admin') && userRole !== 'ADMIN') {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   // 4. Root / -> redirect to appropriate dashboard
   if (pathname === '/') {
     if (isAuth) {
-      const target = demoRole === 'ADMIN' ? '/admin/dashboard' : '/dashboard';
+      const target = userRole === 'ADMIN' ? '/admin/dashboard' : '/dashboard';
       return NextResponse.redirect(new URL(target, request.url));
     } else {
       return NextResponse.redirect(new URL('/login', request.url));

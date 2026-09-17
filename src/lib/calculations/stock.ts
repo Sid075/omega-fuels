@@ -1,4 +1,5 @@
 import { FuelStockTransaction, FuelType } from '@/types';
+import { safeRound } from './cash';
 
 /**
  * Calculate current fuel stock strictly from transaction history.
@@ -28,7 +29,7 @@ export function calculateFuelStock(transactions: FuelStockTransaction[], fuelTyp
         break;
     }
 
-    const volume = Math.abs(tx.quantity_litres) * sign;
+    const volume = Math.abs(Number(tx.quantity_litres) || 0) * sign;
 
     if (tx.fuel_type === 'PETROL') {
       petrolStock += volume;
@@ -37,9 +38,12 @@ export function calculateFuelStock(transactions: FuelStockTransaction[], fuelTyp
     }
   }
 
+  petrolStock = safeRound(petrolStock, 2);
+  dieselStock = safeRound(dieselStock, 2);
+
   return {
     petrolStock: Math.max(0, petrolStock),
     dieselStock: Math.max(0, dieselStock),
-    totalStock: Math.max(0, petrolStock + dieselStock),
+    totalStock: Math.max(0, safeRound(petrolStock + dieselStock, 2)),
   };
 }

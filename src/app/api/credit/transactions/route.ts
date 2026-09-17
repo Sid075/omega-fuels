@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordCreditTransaction } from '@/services/credit.service';
+import { getCurrentUser } from '@/services/auth.service';
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized. Please sign in.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { customer_id, transaction_type, amount, payment_method, description, transaction_at } = body;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getExpenses, recordExpense } from '@/services/expense.service';
+import { getCurrentUser } from '@/services/auth.service';
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,6 +18,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized. Please sign in.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { category, description, amount, expense_date } = body;
 

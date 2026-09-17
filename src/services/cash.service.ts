@@ -59,6 +59,7 @@ export async function getCashLedger(
   typeFilter?: CashLedgerEntryType
 ): Promise<{ entries: CashLedgerItemWithMeta[]; summary: ReturnType<typeof calculateCashLedgerSummary> }> {
   let entries: CashLedgerItemWithMeta[] = [];
+  let entriesFromDb: CashLedgerEntry[] = [];
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
     try {
@@ -75,6 +76,7 @@ export async function getCashLedger(
 
       const { data, error } = await query;
       if (!error && data) {
+        entriesFromDb = data;
         entries = data.map((d: any) => {
           const isInflow = d.entry_type === 'SHIFT_CASH' || d.entry_type === 'CREDIT_CASH_PAYMENT' || (d.entry_type === 'ADJUSTMENT' && d.amount > 0);
           let title = 'Cash Transaction';
@@ -108,8 +110,9 @@ export async function getCashLedger(
     entries = entries.filter((e) => e.occurred_at.startsWith(dateFilter));
   }
 
-  // Calculate summary strictly using our financial engine
-  const summary = calculateCashLedgerSummary(localLedgerEntries);
+  // Calculate summary strictly using our financial engine based on all entries
+  const allEntriesForSummary = entriesFromDb.length > 0 ? entriesFromDb : localLedgerEntries;
+  const summary = calculateCashLedgerSummary(allEntriesForSummary);
 
   return { entries, summary };
 }
@@ -319,6 +322,36 @@ export function appendShiftCashToLedger(shiftId: string, cashAmount: number, emp
     created_by: userId,
     creator_name: 'Station Manager',
     title: `Shift Cash (${employeeName})`,
+    is_inflow: true,
+    created_at: now,
+  };
+
+  localLedgerEntries.unshift(ledgerEntry);
+}
+
+export function appendCreditCashToLedger(
+  ctxId: string,
+  amount: number,
+  customerName: string,
+  userId: string,
+  timestamp?: string
+) {
+  if (amount <= 0) return;
+
+  const now = timestamp || new Date().toISOString();
+  const clId = `cl_cred_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  const ledgerEntry: CashLedgerItemWithMeta = {
+    id: clId,
+    entry_type: 'CREDIT_CASH_PAYMENT',
+    amount: Math.abs(amount),
+    reference_type: 'CREDIT_TRANSACTION',
+    reference_id: ctxId,
+    occurred_at: now,
+    notes: `Credit cash repayment received from ${customerName}`,
+    created_by: userId,
+    creator_name: 'Station Staff',
+    title: `Credit Cash Repayment (${customerName})`,
     is_inflow: true,
     created_at: now,
   };

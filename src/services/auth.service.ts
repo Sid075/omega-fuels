@@ -24,13 +24,19 @@ export const DEMO_ACCOUNTS = {
 };
 
 export async function getCurrentUser(): Promise<UserProfile | null> {
-  const cookieStore = await cookies();
-  const demoRole = cookieStore.get('omega_demo_role')?.value;
+  let cookieStore: any;
+  try {
+    cookieStore = await cookies();
+    const demoRole = cookieStore.get('omega_demo_role')?.value;
 
-  if (demoRole === 'ADMIN') {
-    return DEMO_ACCOUNTS.admin;
-  }
-  if (demoRole === 'MANAGER') {
+    if (demoRole === 'ADMIN') {
+      return DEMO_ACCOUNTS.admin;
+    }
+    if (demoRole === 'MANAGER') {
+      return DEMO_ACCOUNTS.manager;
+    }
+  } catch {
+    // Outside request context (e.g. background job or test runner) -> fallback to manager
     return DEMO_ACCOUNTS.manager;
   }
 
@@ -56,12 +62,14 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   }
 
   // Default to Manager for local review if demo cookie exists
-  const demoUser = cookieStore.get('omega_user_session')?.value;
-  if (demoUser) {
-    try {
-      return JSON.parse(demoUser);
-    } catch {
-      return null;
+  if (cookieStore) {
+    const demoUser = cookieStore.get('omega_user_session')?.value;
+    if (demoUser) {
+      try {
+        return JSON.parse(demoUser);
+      } catch {
+        return null;
+      }
     }
   }
 

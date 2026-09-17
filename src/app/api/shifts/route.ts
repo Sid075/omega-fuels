@@ -40,8 +40,10 @@ export async function POST(request: Request) {
       shift_type: body.shift_type,
       custom_shift_name: body.custom_shift_name,
       notes: body.notes,
+      nozzle_readings: body.nozzle_readings || [],
       payments: body.payments || [],
       other_sales: body.other_sales || [],
+      credit_payments: body.credit_payments || [],
     });
 
     return NextResponse.json({ success: true, data: newShift });

@@ -6,6 +6,7 @@ import {
   PlusCircle,
   CreditCard,
   ArrowDownLeft,
+  ArrowUpRight,
   Phone,
   Search,
   RefreshCw,
@@ -19,6 +20,7 @@ import { Badge } from '@/components/ui/Badge';
 import { formatCurrency, formatDate } from '@/lib/utils/formatters';
 import { CreditCustomerModal } from '@/components/credit/CreditCustomerModal';
 import { RecordRepaymentModal } from '@/components/credit/RecordRepaymentModal';
+import { RecordCreditGivenModal } from '@/components/credit/RecordCreditGivenModal';
 import { CustomerStatementModal } from '@/components/credit/CustomerStatementModal';
 
 export default function CreditBookPage() {
@@ -30,6 +32,9 @@ export default function CreditBookPage() {
   // Modals
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<any>(null);
+
+  const [isCreditGivenModalOpen, setIsCreditGivenModalOpen] = useState(false);
+  const [creditGivenCustomerId, setCreditGivenCustomerId] = useState<string | undefined>(undefined);
 
   const [isRepaymentModalOpen, setIsRepaymentModalOpen] = useState(false);
   const [repaymentCustomerId, setRepaymentCustomerId] = useState<string | undefined>(undefined);
@@ -72,6 +77,12 @@ export default function CreditBookPage() {
     setIsCustomerModalOpen(true);
   };
 
+  const handleOpenCreditGiven = (customerId?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCreditGivenCustomerId(customerId);
+    setIsCreditGivenModalOpen(true);
+  };
+
   const handleOpenRepayment = (customerId?: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setRepaymentCustomerId(customerId);
@@ -100,7 +111,7 @@ export default function CreditBookPage() {
             <span>Credit Customer Book</span>
           </h2>
           <p className="text-xs text-zinc-500 dark:text-slate-400 mt-0.5">
-            Credit customer accounts, credit chit logging, repayments & detailed ledger statements
+            Credit fuel chits issued (Credit Given), customer collections (Credit Received) & account ledgers
           </p>
         </div>
 
@@ -108,13 +119,21 @@ export default function CreditBookPage() {
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => handleOpenCreditGiven()}
+            icon={<ArrowUpRight size={15} />}
+          >
+            + Give Credit
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handleOpenRepayment()}
             icon={<ArrowDownLeft size={15} />}
           >
-            Record Repayment
+            ↓ Receive Payment
           </Button>
           <Button size="sm" onClick={handleOpenAddCustomer} icon={<PlusCircle size={15} />}>
-            New Credit Customer
+            New Customer
           </Button>
         </div>
       </div>
@@ -122,34 +141,34 @@ export default function CreditBookPage() {
       {/* Credit Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MetricCard
-          label="Total Outstanding Credit"
-          value={formatCurrency(totalOutstanding)}
-          subtitle="Cumulative balance owed by customers"
-          variant={totalOutstanding > 0 ? 'danger' : 'success'}
-          icon={<CreditCard size={18} />}
-        />
-
-        <MetricCard
-          label="Total Credit Extended"
+          label="Total Credit Given"
           value={formatCurrency(totalCreditGiven)}
-          subtitle="Total credit fuel chits issued"
-          variant="primary"
-          icon={<BookOpen size={18} />}
+          subtitle="Cumulative fuel & products issued on credit"
+          variant="warning"
+          icon={<ArrowUpRight size={18} />}
         />
 
         <MetricCard
-          label="Total Repayments Received"
+          label="Total Credit Received"
           value={formatCurrency(totalRepaid)}
-          subtitle="Cash & Digital credit repayments"
+          subtitle="Cumulative repayments collected (Cash & Digital)"
           variant="success"
           icon={<ArrowDownLeft size={18} />}
+        />
+
+        <MetricCard
+          label="Net Outstanding Due"
+          value={formatCurrency(totalOutstanding)}
+          subtitle="Remaining unpaid customer debt"
+          variant={totalOutstanding > 0 ? 'danger' : 'success'}
+          icon={<CreditCard size={18} />}
         />
       </div>
 
       {/* Customer Directory Ledger */}
       <Card
         title="Credit Customer Directory"
-        subtitle="Itemized customer accounts, due balances & account statements"
+        subtitle="Itemized customer accounts, credit given, repayments received & balance due"
         action={
           <Button variant="ghost" size="sm" onClick={fetchCustomers} icon={<RefreshCw size={14} />}>
             Refresh
@@ -181,7 +200,7 @@ export default function CreditBookPage() {
               <div
                 key={cust.id}
                 onClick={() => handleOpenStatement(cust.id)}
-                className="p-4 rounded-md border border-border-light dark:border-border-dark bg-surface-light-subtle dark:bg-surface-dark-subtle hover:border-brand-500/50 cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                className="p-4 rounded-md border border-border-light dark:border-border-dark bg-surface-light-subtle dark:bg-surface-dark-subtle hover:border-brand-500/50 cursor-pointer transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4"
               >
                 <div>
                   <div className="flex items-center gap-2">
@@ -208,36 +227,77 @@ export default function CreditBookPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-border-light dark:border-border-dark">
-                  <div className="text-right">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-slate-400">
-                      Due Balance
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  {/* Given / Received / Due Stats */}
+                  <div className="grid grid-cols-3 gap-3 text-right">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                        Credit Given
+                      </div>
+                      <div className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
+                        {formatCurrency(cust.total_credit_given || 0)}
+                      </div>
                     </div>
-                    <div
-                      className={`text-lg font-bold font-mono ${
-                        cust.outstanding_balance > 0
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {formatCurrency(cust.outstanding_balance)}
+
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                        Received
+                      </div>
+                      <div className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(cust.total_repayments || 0)}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-slate-400">
+                        Due Balance
+                      </div>
+                      <div
+                        className={`text-base font-bold font-mono ${
+                          cust.outstanding_balance > 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {formatCurrency(cust.outstanding_balance)}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Per-Customer Quick Actions */}
+                  <div className="flex items-center gap-1.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-border-light dark:border-border-dark">
                     <Button
-                      variant="ghost"
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => handleOpenCreditGiven(cust.id, e)}
+                      icon={<ArrowUpRight size={13} />}
+                    >
+                      Give Credit
+                    </Button>
+                    <Button
+                      variant="secondary"
                       size="sm"
                       onClick={(e) => handleOpenRepayment(cust.id, e)}
-                      icon={<ArrowDownLeft size={14} />}
+                      icon={<ArrowDownLeft size={13} />}
                     >
                       Repay
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenStatement(cust.id);
+                      }}
+                      icon={<FileText size={13} />}
+                    >
+                      Statement
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={(e) => handleOpenEditCustomer(cust, e)}
-                      icon={<Edit3 size={14} />}
+                      icon={<Edit3 size={13} />}
                     >
                       Edit
                     </Button>
@@ -255,6 +315,14 @@ export default function CreditBookPage() {
         onClose={() => setIsCustomerModalOpen(false)}
         onSuccess={handleSuccess}
         customerToEdit={customerToEdit}
+      />
+
+      <RecordCreditGivenModal
+        isOpen={isCreditGivenModalOpen}
+        onClose={() => setIsCreditGivenModalOpen(false)}
+        onSuccess={handleSuccess}
+        customers={customers}
+        defaultCustomerId={creditGivenCustomerId}
       />
 
       <RecordRepaymentModal

@@ -14,6 +14,11 @@ Do not hard-delete employees with financial history.
 ## shifts
 `id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES employees(id), shift_date TEXT NOT NULL, shift_type TEXT NOT NULL CHECK(shift_type IN ('MORNING', 'EVENING', 'NIGHT', 'CUSTOM')), custom_shift_name TEXT, status TEXT NOT NULL DEFAULT 'COMPLETED', notes TEXT, entered_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL`
 
+## shift_nozzle_readings
+`id TEXT PRIMARY KEY, shift_id TEXT NOT NULL REFERENCES shifts(id) ON DELETE CASCADE, nozzle_name TEXT NOT NULL, fuel_type TEXT NOT NULL CHECK(fuel_type IN ('PETROL', 'DIESEL')), opening_reading REAL NOT NULL, closing_reading REAL NOT NULL CHECK(closing_reading >= opening_reading), litres_sold REAL NOT NULL CHECK(litres_sold >= 0), price_per_litre REAL NOT NULL CHECK(price_per_litre >= 0), sales_amount REAL NOT NULL CHECK(sales_amount >= 0), created_at TEXT NOT NULL, updated_at TEXT NOT NULL`
+
+Litres sold = closing_reading - opening_reading. Sales amount = litres_sold * price_per_litre. Price is snapshotted from the effective fuel price for the shift date.
+
 ## shift_payments
 `id TEXT PRIMARY KEY, shift_id TEXT NOT NULL REFERENCES shifts(id) ON DELETE CASCADE, payment_method TEXT NOT NULL CHECK(payment_method IN ('CASH', 'UPI', 'CARD', 'CREDIT')), amount REAL NOT NULL, customer_id TEXT REFERENCES credit_customers(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL`
 
@@ -50,12 +55,12 @@ Each usage creates a negative stock transaction.
 `id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'INACTIVE')), notes TEXT, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL`
 
 ## credit_transactions
-`id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES credit_customers(id), transaction_type TEXT NOT NULL CHECK(transaction_type IN ('CREDIT_GIVEN', 'PAYMENT_RECEIVED', 'ADJUSTMENT')), amount REAL NOT NULL, payment_method TEXT CHECK(payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER')), description TEXT, transaction_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL`
+`id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES credit_customers(id), shift_id TEXT REFERENCES shifts(id) ON DELETE SET NULL, transaction_type TEXT NOT NULL CHECK(transaction_type IN ('CREDIT_GIVEN', 'PAYMENT_RECEIVED', 'ADJUSTMENT')), amount REAL NOT NULL, payment_method TEXT CHECK(payment_method IN ('CASH', 'UPI', 'CARD', 'BANK_TRANSFER', 'CHEQUE', 'OTHER')), description TEXT, transaction_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL`
 
 Outstanding balance:
 `SUM(CREDIT_GIVEN) - SUM(PAYMENT_RECEIVED) ± adjustments`
 
-Cash credit payments also create cash ledger events; UPI does not become physical cash.
+Cash credit payments also create cash ledger events; UPI does not become physical cash. Payments collected during a shift link to shifts(id).
 
 ## cash_ledger
 `id TEXT PRIMARY KEY, entry_type TEXT NOT NULL CHECK(entry_type IN ('SHIFT_CASH', 'CREDIT_CASH_PAYMENT', 'OWNER_COLLECTION', 'ADJUSTMENT')), amount REAL NOT NULL, reference_type TEXT, reference_id TEXT, occurred_at TEXT NOT NULL, notes TEXT, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL`

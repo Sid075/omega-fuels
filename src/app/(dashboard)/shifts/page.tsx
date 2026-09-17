@@ -54,8 +54,15 @@ export default function ShiftsHistoryPage() {
   });
 
   const totalCollected = filteredShifts.reduce((sum, s) => sum + s.total_sales, 0);
-  const totalPhysicalCash = filteredShifts.reduce((sum, s) => sum + s.cash_amount, 0);
+  const totalPhysicalCash = filteredShifts.reduce(
+    (sum, s) => sum + (s.total_physical_cash ?? s.cash_amount),
+    0
+  );
   const totalDigital = filteredShifts.reduce((sum, s) => sum + s.digital_amount, 0);
+  const totalCreditRepayments = filteredShifts.reduce(
+    (sum, s) => sum + (s.credit_repayments_total ?? 0),
+    0
+  );
 
   return (
     <div className="space-y-6">
@@ -203,13 +210,83 @@ export default function ShiftsHistoryPage() {
                   </div>
                 </div>
 
+                {/* Nozzle Summary (if available) */}
+                {shift.nozzle_readings && shift.nozzle_readings.length > 0 && (
+                  <div className="p-2.5 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <span>Nozzle Readings ({shift.nozzle_readings.length}):</span>
+                        <span className="font-mono text-brand-600 dark:text-brand-400 font-bold">
+                          {shift.total_fuel_litres?.toFixed(2)} Litres
+                        </span>
+                      </div>
+                      {typeof shift.reconciliation_variance === 'number' && (
+                        shift.reconciliation_variance === 0 ? (
+                          <Badge variant="success">Balanced</Badge>
+                        ) : shift.reconciliation_variance > 0 ? (
+                          <Badge variant="info">Excess +{formatCurrency(shift.reconciliation_variance)}</Badge>
+                        ) : (
+                          <Badge variant="danger">Shortage {formatCurrency(shift.reconciliation_variance)}</Badge>
+                        )
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[11px]">
+                      {shift.nozzle_readings.map((nr, idx) => (
+                        <span
+                          key={nr.id || idx}
+                          className="px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono text-zinc-700 dark:text-zinc-300"
+                        >
+                          <strong>{nr.nozzle_name}</strong> ({nr.fuel_type}): {nr.litres_sold.toFixed(2)}L @ ₹{nr.price_per_litre}/L = {formatCurrency(nr.sales_amount)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Credit Book Payments Received (if any) */}
+                {((shift.credit_repayments_total ?? 0) > 0 ||
+                  (shift.credit_payments && shift.credit_payments.length > 0)) && (
+                  <div className="p-2.5 rounded bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-1.5 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div className="font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                        <span>Credit Received (Repayments):</span>
+                        <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                          {formatCurrency(shift.credit_repayments_total ?? 0)}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Cash: <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(shift.credit_repayments_cash ?? 0)}</span> • Digital: <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatCurrency(shift.credit_repayments_digital ?? 0)}</span>
+                      </div>
+                    </div>
+                    {shift.credit_payments && shift.credit_payments.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 text-[11px]">
+                        {shift.credit_payments.map((cp, idx) => (
+                          <span
+                            key={cp.id || idx}
+                            className="px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-emerald-200 dark:border-emerald-900 font-mono text-zinc-700 dark:text-zinc-300"
+                          >
+                            <strong>{cp.customer_name || 'Customer'}</strong>: {formatCurrency(cp.amount)} ({cp.payment_method})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Breakdown Tiles */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border-light dark:border-border-dark text-xs">
                   <div className="p-2 rounded-sm bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-                    <span className="text-zinc-500 dark:text-slate-400 block text-[10px] uppercase">Cash</span>
-                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(shift.cash_amount)}
+                    <span className="text-zinc-500 dark:text-slate-400 block text-[10px] uppercase">
+                      {(shift.credit_repayments_cash ?? 0) > 0 ? 'Total Physical Cash' : 'Cash'}
                     </span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(shift.total_physical_cash ?? shift.cash_amount)}
+                    </span>
+                    {(shift.credit_repayments_cash ?? 0) > 0 && (
+                      <span className="text-[9px] text-zinc-400 block">
+                        (Sales: {formatCurrency(shift.cash_amount)} + Repay: {formatCurrency(shift.credit_repayments_cash ?? 0)})
+                      </span>
+                    )}
                   </div>
 
                   <div className="p-2 rounded-sm bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
@@ -231,7 +308,7 @@ export default function ShiftsHistoryPage() {
                   </div>
 
                   <div className="p-2 rounded-sm bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-                    <span className="text-zinc-500 dark:text-slate-400 block text-[10px] uppercase">Credit Chits</span>
+                    <span className="text-zinc-500 dark:text-slate-400 block text-[10px] uppercase">Credit Given</span>
                     <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
                       {formatCurrency(shift.credit_amount)}
                     </span>

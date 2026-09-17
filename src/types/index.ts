@@ -64,6 +64,20 @@ export interface OtherSale {
   updated_at: string;
 }
 
+export interface ShiftNozzleReading {
+  id: string;
+  shift_id?: string;
+  nozzle_name: string;
+  fuel_type: FuelType;
+  opening_reading: number;
+  closing_reading: number;
+  litres_sold: number;
+  price_per_litre: number;
+  sales_amount: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export type FuelType = 'PETROL' | 'DIESEL';
 
 export interface FuelPrice {
@@ -169,10 +183,11 @@ export interface CreditCustomer {
 }
 
 export type CreditTransactionType = 'CREDIT_GIVEN' | 'PAYMENT_RECEIVED' | 'ADJUSTMENT';
-export type CreditPaymentMethod = 'CASH' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE' | 'OTHER';
+export type CreditPaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'CHEQUE' | 'OTHER';
 
 export interface CreditTransaction {
   id: string;
+  shift_id?: string | null;
   customer_id: string;
   transaction_type: CreditTransactionType;
   amount: number;
@@ -181,6 +196,17 @@ export interface CreditTransaction {
   transaction_at: string;
   created_by: string;
   created_at: string;
+}
+
+export interface ShiftCreditPayment {
+  id: string;
+  shift_id?: string;
+  customer_id: string;
+  customer_name?: string;
+  amount: number;
+  payment_method: CreditPaymentMethod;
+  notes?: string | null;
+  created_at?: string;
 }
 
 export type CashLedgerEntryType =

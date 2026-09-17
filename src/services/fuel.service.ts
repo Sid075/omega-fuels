@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { FuelPrice, FuelStockTransaction, FuelType, FuelTransactionType, FuelTank } from '@/types';
 import { calculateFuelStock } from '@/lib/calculations/stock';
+import { safeRound } from '@/lib/calculations/cash';
 import { logAuditAction } from './audit.service';
 import { getCurrentUser } from './auth.service';
 
@@ -150,6 +151,72 @@ export async function getLatestFuelPrices(): Promise<{ PETROL: number; DIESEL: n
     const latestD = localPrices.filter((p) => p.fuel_type === 'DIESEL').sort((a, b) => new Date(b.effective_at).getTime() - new Date(a.effective_at).getTime())[0];
     if (latestP) petrolPrice = latestP.price_per_litre;
     if (latestD) dieselPrice = latestD.price_per_litre;
+  }
+
+  return { PETROL: petrolPrice, DIESEL: dieselPrice };
+}
+
+/**
+ * Determine active fuel prices for a specific shift date (YYYY-MM-DD).
+ * Looks up the latest price effective on or before that date.
+ */
+export async function getFuelPricesForDate(targetDate: string): Promise<{ PETROL: number; DIESEL: number }> {
+  const latest = await getLatestFuelPrices();
+  let petrolPrice = latest.PETROL;
+  let dieselPrice = latest.DIESEL;
+
+  const cleanDate = targetDate ? targetDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const endOfDayIso = `${cleanDate}T23:59:59.999Z`;
+
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
+    try {
+      const supabase = await createClient();
+
+      const { data: petrolData } = await supabase
+        .from('fuel_prices')
+        .select('price_per_litre')
+        .eq('fuel_type', 'PETROL')
+        .lte('effective_at', endOfDayIso)
+        .order('effective_at', { ascending: false })
+        .limit(1);
+
+      if (petrolData && petrolData[0]) {
+        petrolPrice = Number(petrolData[0].price_per_litre);
+      }
+
+      const { data: dieselData } = await supabase
+        .from('fuel_prices')
+        .select('price_per_litre')
+        .eq('fuel_type', 'DIESEL')
+        .lte('effective_at', endOfDayIso)
+        .order('effective_at', { ascending: false })
+        .limit(1);
+
+      if (dieselData && dieselData[0]) {
+        dieselPrice = Number(dieselData[0].price_per_litre);
+      }
+
+      return { PETROL: petrolPrice, DIESEL: dieselPrice };
+    } catch {
+      // Fallback to local
+    }
+  }
+
+  // Local store lookup
+  const petrolMatches = localPrices
+    .filter((p) => p.fuel_type === 'PETROL' && p.effective_at.slice(0, 10) <= cleanDate)
+    .sort((a, b) => new Date(b.effective_at).getTime() - new Date(a.effective_at).getTime());
+
+  if (petrolMatches[0]) {
+    petrolPrice = petrolMatches[0].price_per_litre;
+  }
+
+  const dieselMatches = localPrices
+    .filter((p) => p.fuel_type === 'DIESEL' && p.effective_at.slice(0, 10) <= cleanDate)
+    .sort((a, b) => new Date(b.effective_at).getTime() - new Date(a.effective_at).getTime());
+
+  if (dieselMatches[0]) {
+    dieselPrice = dieselMatches[0].price_per_litre;
   }
 
   return { PETROL: petrolPrice, DIESEL: dieselPrice };
@@ -411,7 +478,7 @@ export async function recordTestFuelUsage(fuelType: FuelType, litres: number, no
 
   localTransactions.unshift(transactionRecord);
   const tank = localTanks.find((t) => t.id === tankId);
-  if (tank) tank.current_stock_litres -= volume;
+  if (tank) tank.current_stock_litres = Math.max(0, safeRound(tank.current_stock_litres - volume, 3));
 
   return transactionRecord;
 }
@@ -472,7 +539,7 @@ export async function recordGeneratorFuelUsage(litres: number, notes?: string): 
 
   localTransactions.unshift(transactionRecord);
   const tank = localTanks.find((t) => t.id === tankId);
-  if (tank) tank.current_stock_litres -= volume;
+  if (tank) tank.current_stock_litres = Math.max(0, safeRound(tank.current_stock_litres - volume, 3));
 
   return transactionRecord;
 }
@@ -544,10 +611,24 @@ export async function recordStockAdjustment(fuelType: FuelType, quantityLitres: 
 export async function getFuelStockOverview(fuelTypeFilter?: FuelType, typeFilter?: FuelTransactionType) {
   const prices = await getLatestFuelPrices();
   let transactions: FuelStockItemWithMeta[] = [...localTransactions];
+  let allTxsForSummary: FuelStockTransaction[] = localTransactions;
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
     try {
       const supabase = await createClient();
+
+      const { data: allData } = await supabase
+        .from('fuel_stock_transactions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (allData && allData.length > 0) {
+        allTxsForSummary = allData.map((d: any) => ({
+          ...d,
+          quantity_litres: Number(d.quantity_litres),
+        }));
+      }
+
       let query = supabase
         .from('fuel_stock_transactions')
         .select(`
@@ -579,14 +660,14 @@ export async function getFuelStockOverview(fuelTypeFilter?: FuelType, typeFilter
     }
   }
 
-  const stockSummary = calculateFuelStock(localTransactions);
+  const stockSummary = calculateFuelStock(allTxsForSummary);
 
   const tanksWithLevels = localTanks.map((tank) => {
     const currentStock = tank.fuel_type === 'PETROL' ? stockSummary.petrolStock : stockSummary.dieselStock;
     const capacity = tank.capacity_litres;
     const percentage = Math.min(100, Math.round((currentStock / capacity) * 100));
     const pricePerLitre = tank.fuel_type === 'PETROL' ? prices.PETROL : prices.DIESEL;
-    const stockValuation = currentStock * pricePerLitre;
+    const stockValuation = safeRound(currentStock * pricePerLitre, 2);
 
     return {
       ...tank,

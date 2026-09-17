@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { Expense } from '@/types';
+import { safeRound } from '@/lib/calculations/cash';
 import { logAuditAction } from './audit.service';
 import { getCurrentUser } from './auth.service';
 
@@ -83,7 +84,7 @@ export async function getExpenses(
     expenses = filtered;
   }
 
-  const totalAmount = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalAmount = safeRound(expenses.reduce((acc, curr) => acc + curr.amount, 0));
   return { expenses, totalAmount };
 }
 

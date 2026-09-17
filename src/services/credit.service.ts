@@ -3,6 +3,7 @@ import { CreditCustomer, CreditTransaction, CreditPaymentMethod } from '@/types'
 import { calculateCreditBalance } from '@/lib/calculations/credit';
 import { logAuditAction } from './audit.service';
 import { getCurrentUser } from './auth.service';
+import { appendCreditCashToLedger } from './cash.service';
 
 export interface CreditCustomerWithBalance extends CreditCustomer {
   outstanding_balance: number;
@@ -100,6 +101,7 @@ export async function getCreditCustomers(searchTerm?: string): Promise<{
   totalOutstanding: number;
 }> {
   let customers: CreditCustomerWithBalance[] = [];
+  let activeTransactions: CreditTransaction[] = localCreditTransactions;
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
     try {
@@ -111,10 +113,19 @@ export async function getCreditCustomers(searchTerm?: string): Promise<{
       }
 
       const { data, error } = await query;
+      const { data: txData } = await supabase.from('credit_transactions').select('*').order('transaction_at', { ascending: false });
+
+      if (txData && txData.length > 0) {
+        activeTransactions = txData.map((t: any) => ({
+          ...t,
+          amount: Number(t.amount) || 0,
+        }));
+      }
+
       if (!error && data) {
         customers = data.map((cust: any) => {
-          const bal = calculateCreditBalance(localCreditTransactions, cust.id);
-          const custTxs = localCreditTransactions
+          const bal = calculateCreditBalance(activeTransactions, cust.id);
+          const custTxs = activeTransactions
             .filter((t) => t.customer_id === cust.id)
             .sort((a, b) => new Date(b.transaction_at).getTime() - new Date(a.transaction_at).getTime());
 
@@ -157,7 +168,7 @@ export async function getCreditCustomers(searchTerm?: string): Promise<{
     });
   }
 
-  const overallBalance = calculateCreditBalance(localCreditTransactions);
+  const overallBalance = calculateCreditBalance(activeTransactions);
 
   return {
     customers,
@@ -179,7 +190,7 @@ export async function saveCreditCustomer(input: {
   const userId = currentUser?.id || 'usr_admin_001';
   const userRole = currentUser?.role || 'ADMIN';
   const isEdit = Boolean(input.id);
-  const custId = input.id || `cust_${Date.now()}`;
+  const custId = input.id || `cust_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
   const customerRecord: CreditCustomer = {
@@ -257,10 +268,42 @@ export async function saveCreditCustomer(input: {
 }
 
 /**
+ * Retrieve a credit customer by ID (supports Supabase and local cache)
+ */
+export async function getCreditCustomerById(customerId: string): Promise<CreditCustomer | null> {
+  if (!customerId) return null;
+
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from('credit_customers')
+        .select('*')
+        .eq('id', customerId)
+        .maybeSingle();
+
+      if (!error && data) {
+        if (!localCustomers.some((c) => c.id === data.id)) {
+          localCustomers.unshift(data);
+        }
+        return data;
+      }
+    } catch {
+      // Fallback to local
+    }
+  }
+
+  const local = localCustomers.find((c) => c.id === customerId);
+  return local || null;
+}
+
+/**
  * Record Credit Repayment or Credit Given transaction
  */
 export interface RecordCreditTransactionInput {
+  id?: string;
   customer_id: string;
+  shift_id?: string | null;
   transaction_type: 'CREDIT_GIVEN' | 'PAYMENT_RECEIVED' | 'ADJUSTMENT';
   amount: number;
   payment_method?: CreditPaymentMethod;
@@ -276,14 +319,29 @@ export async function recordCreditTransaction(
   const userRole = currentUser?.role || 'MANAGER';
   const amount = Math.abs(Number(input.amount));
   const timestamp = input.transaction_at || new Date().toISOString();
-  const ctxId = `ctx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const ctxId = input.id || `ctx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  const customer = localCustomers.find((c) => c.id === input.customer_id);
+  const customer = await getCreditCustomerById(input.customer_id);
   const customerName = customer?.name || 'Credit Customer';
+
+  // In-memory duplicate protection check
+  const existingLocal = localCreditTransactions.find(
+    (t) =>
+      t.id === ctxId ||
+      (Boolean(input.shift_id) &&
+        t.shift_id === input.shift_id &&
+        t.customer_id === input.customer_id &&
+        t.transaction_type === input.transaction_type &&
+        t.amount === amount)
+  );
+  if (existingLocal) {
+    return existingLocal;
+  }
 
   const txRecord: CreditTransactionWithMeta = {
     id: ctxId,
     customer_id: input.customer_id,
+    shift_id: input.shift_id || null,
     customer_name: customerName,
     transaction_type: input.transaction_type,
     amount,
@@ -299,9 +357,29 @@ export async function recordCreditTransaction(
     try {
       const supabase = await createClient();
 
+      // Database-level duplicate protection check
+      const { data: existingDb } = await supabase
+        .from('credit_transactions')
+        .select('*')
+        .eq('id', ctxId)
+        .maybeSingle();
+
+      if (existingDb) {
+        const mapped: CreditTransactionWithMeta = {
+          ...existingDb,
+          amount: Number(existingDb.amount) || 0,
+          customer_name: customerName,
+        };
+        if (!localCreditTransactions.some((t) => t.id === mapped.id)) {
+          localCreditTransactions.unshift(mapped);
+        }
+        return mapped;
+      }
+
       await supabase.from('credit_transactions').insert({
         id: ctxId,
         customer_id: input.customer_id,
+        shift_id: input.shift_id || null,
         transaction_type: input.transaction_type,
         amount,
         payment_method: input.transaction_type === 'PAYMENT_RECEIVED' ? input.payment_method || 'CASH' : null,
@@ -310,17 +388,17 @@ export async function recordCreditTransaction(
         created_by: userId,
       });
 
-      // If CASH repayment, append to cash ledger
+      // If CASH repayment, append to cash ledger (Zero double-counting)
       if (input.transaction_type === 'PAYMENT_RECEIVED' && input.payment_method === 'CASH') {
         const clId = `cl_cred_${Date.now()}`;
         await supabase.from('cash_ledger').insert({
           id: clId,
           entry_type: 'CREDIT_CASH_PAYMENT',
-          amount, // Positive cash inflow
+          amount, // Positive cash inflow into physical drawer
           reference_type: 'CREDIT_TRANSACTION',
           reference_id: ctxId,
           occurred_at: timestamp,
-          notes: `Cash credit repayment from ${customerName}`,
+          notes: `Cash credit repayment from ${customerName}${input.shift_id ? ` (Shift #${input.shift_id.substring(0, 8)})` : ''}`,
           created_by: userId,
         });
       }
@@ -332,17 +410,28 @@ export async function recordCreditTransaction(
         module: 'CREDIT_BOOK',
         entityType: 'CREDIT_TRANSACTION',
         entityId: ctxId,
-        newValues: { customer_id: input.customer_id, amount, payment_method: input.payment_method },
-        reason: `${input.transaction_type}: ₹${amount.toLocaleString('en-IN')} for ${customerName}`,
+        newValues: { customer_id: input.customer_id, shift_id: input.shift_id || null, amount, payment_method: input.payment_method },
+        reason: `${input.transaction_type}: ₹${amount.toLocaleString('en-IN')} for ${customerName}${input.shift_id ? ` on shift ${input.shift_id}` : ''}`,
       });
+
+      // Synchronize in-memory active store
+      if (!localCreditTransactions.some((t) => t.id === txRecord.id)) {
+        localCreditTransactions.unshift(txRecord);
+      }
 
       return txRecord;
     } catch {
-      // Fallback
+      // Fallback to local
     }
   }
 
+  // Local fallback mode
   localCreditTransactions.unshift(txRecord);
+
+  // If CASH repayment, append to cash ledger in local fallback mode
+  if (input.transaction_type === 'PAYMENT_RECEIVED' && (input.payment_method === 'CASH' || !input.payment_method)) {
+    appendCreditCashToLedger(ctxId, amount, customerName, userId, timestamp);
+  }
 
   await logAuditAction({
     actorUserId: userId,
@@ -351,8 +440,8 @@ export async function recordCreditTransaction(
     module: 'CREDIT_BOOK',
     entityType: 'CREDIT_TRANSACTION',
     entityId: ctxId,
-    newValues: { customer_id: input.customer_id, amount, payment_method: input.payment_method },
-    reason: `${input.transaction_type}: ₹${amount.toLocaleString('en-IN')} for ${customerName}`,
+    newValues: { customer_id: input.customer_id, shift_id: input.shift_id || null, amount, payment_method: input.payment_method },
+    reason: `${input.transaction_type}: ₹${amount.toLocaleString('en-IN')} for ${customerName}${input.shift_id ? ` on shift ${input.shift_id}` : ''}`,
   });
 
   return txRecord;
@@ -393,4 +482,49 @@ export async function getCustomerStatement(customerId: string) {
     summary: balanceSummary,
     transactions: transactions.sort((a, b) => new Date(b.transaction_at).getTime() - new Date(a.transaction_at).getTime()),
   };
+}
+
+/**
+ * Retrieve credit repayments linked to a specific shift
+ */
+export async function getCreditPaymentsForShift(shiftId: string) {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
+    try {
+      const supabase = await createClient();
+      const { data } = await supabase
+        .from('credit_transactions')
+        .select('*, customer:credit_customers(name)')
+        .eq('shift_id', shiftId)
+        .eq('transaction_type', 'PAYMENT_RECEIVED')
+        .order('transaction_at', { ascending: false });
+
+      if (data) {
+        return data.map((d: any) => ({
+          id: d.id,
+          shift_id: d.shift_id,
+          customer_id: d.customer_id,
+          customer_name: d.customer?.name || 'Customer',
+          amount: Number(d.amount),
+          payment_method: d.payment_method || 'CASH',
+          notes: d.description,
+          created_at: d.transaction_at,
+        }));
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  return localCreditTransactions
+    .filter((t) => t.shift_id === shiftId && t.transaction_type === 'PAYMENT_RECEIVED')
+    .map((t) => ({
+      id: t.id,
+      shift_id: t.shift_id || shiftId,
+      customer_id: t.customer_id,
+      customer_name: t.customer_name || 'Customer',
+      amount: t.amount,
+      payment_method: (t.payment_method as any) || 'CASH',
+      notes: t.description,
+      created_at: t.transaction_at,
+    }));
 }

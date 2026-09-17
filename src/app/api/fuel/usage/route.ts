@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordTestFuelUsage, recordGeneratorFuelUsage } from '@/services/fuel.service';
+import { getCurrentUser } from '@/services/auth.service';
 import { FuelType } from '@/types';
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized. Please sign in.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { usage_type, fuel_type, quantity_litres, notes } = body;
 
