@@ -43,7 +43,7 @@ let localShifts: ShiftRecordWithDetails[] = [
     id: 'shift_01',
     employee_id: 'emp_01',
     employee_name: 'Ramesh Kumar',
-    shift_date: new Date().toISOString().split('T')[0],
+    shift_date: '2026-08-25',
     shift_type: 'MORNING',
     custom_shift_name: null,
     status: 'COMPLETED',
@@ -145,7 +145,12 @@ let localShifts: ShiftRecordWithDetails[] = [
   },
 ];
 
-export async function getShifts(dateFilter?: string, employeeIdFilter?: string): Promise<ShiftRecordWithDetails[]> {
+export async function getShifts(
+  dateFilter?: string,
+  employeeIdFilter?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<ShiftRecordWithDetails[]> {
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
     try {
       const supabase = await createClient();
@@ -163,6 +168,8 @@ export async function getShifts(dateFilter?: string, employeeIdFilter?: string):
         .order('created_at', { ascending: false });
 
       if (dateFilter) query = query.eq('shift_date', dateFilter);
+      if (startDate) query = query.gte('shift_date', startDate);
+      if (endDate) query = query.lte('shift_date', endDate);
       if (employeeIdFilter) query = query.eq('employee_id', employeeIdFilter);
 
       const { data, error } = await query;
@@ -250,6 +257,12 @@ export async function getShifts(dateFilter?: string, employeeIdFilter?: string):
   let results = [...localShifts];
   if (dateFilter) {
     results = results.filter((s) => s.shift_date === dateFilter);
+  }
+  if (startDate) {
+    results = results.filter((s) => s.shift_date >= startDate);
+  }
+  if (endDate) {
+    results = results.filter((s) => s.shift_date <= endDate);
   }
   if (employeeIdFilter) {
     results = results.filter((s) => s.employee_id === employeeIdFilter);

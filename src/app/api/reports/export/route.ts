@@ -16,11 +16,19 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const format = searchParams.get('format') || 'xlsx';
     const scope = searchParams.get('scope') || 'ALL';
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
     const dateStr = new Date().toISOString().split('T')[0];
 
-    if (format === 'csv') {
-      const csvString = await generateCsvExport(scope);
-      const filename = `OMEGA_FUELS_MASTER_REPORT_${dateStr}.csv`;
+    const exportOptions = {
+      startDate,
+      endDate,
+      scope,
+    };
+
+    if (format.toLowerCase() === 'csv') {
+      const csvString = await generateCsvExport(exportOptions);
+      const filename = `OMEGA_FUELS_REPORT_${scope}_${startDate || dateStr}_${endDate || dateStr}.csv`;
       return new NextResponse(csvString, {
         status: 200,
         headers: {
@@ -30,8 +38,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const buffer = await generateMultiSheetExcelWorkbook();
-    const filename = `OMEGA_FUELS_MASTER_REPORT_${dateStr}.xlsx`;
+    const buffer = await generateMultiSheetExcelWorkbook(exportOptions);
+    const filename = `OMEGA_FUELS_REPORT_${scope}_${startDate || dateStr}_${endDate || dateStr}.xlsx`;
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

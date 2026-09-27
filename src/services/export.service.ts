@@ -6,20 +6,40 @@ import { getExpenses } from './expense.service';
 import { getEmployees } from './employee.service';
 import { getShifts } from './shift.service';
 
-export async function generateMultiSheetExcelWorkbook(): Promise<Buffer> {
+export interface ExportOptions {
+  startDate?: string;
+  endDate?: string;
+  scope?: string;
+}
+
+export async function generateMultiSheetExcelWorkbook(options?: ExportOptions): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'OMEGA FUELS Management System';
   workbook.lastModifiedBy = 'Station Admin';
   workbook.created = new Date();
   workbook.modified = new Date();
 
-  // Fetch live domain datasets
-  const cashData = await getCashLedger();
+  const scope = options?.scope || 'ALL';
+  const startDate = options?.startDate;
+  const endDate = options?.endDate;
+
+  const isAll = scope === 'ALL';
+  const isFin = scope === 'FINANCIAL';
+  const isFuel = scope === 'FUEL';
+  const isCredit = scope === 'CREDIT';
+
+  // Fetch live domain datasets filtered by date range where applicable
+  const cashData = await getCashLedger(undefined, undefined, startDate, endDate);
   const fuelData = await getFuelStockOverview();
   const priceHistory = await getFuelPriceHistory();
   const creditData = await getCreditCustomers();
-  const expenseData = await getExpenses();
+  const expenseData = await getExpenses(undefined, startDate, endDate);
   const employees = await getEmployees();
+  const shifts = await getShifts(undefined, undefined, startDate, endDate);
+
+  let fuelTx = fuelData.transactions;
+  if (startDate) fuelTx = fuelTx.filter((t) => t.created_at.slice(0, 10) >= startDate);
+  if (endDate) fuelTx = fuelTx.filter((t) => t.created_at.slice(0, 10) <= endDate);
 
   // Helper styling
   const headerFill: ExcelJS.Fill = {
@@ -33,199 +53,214 @@ export async function generateMultiSheetExcelWorkbook(): Promise<Buffer> {
     size: 11,
   };
 
-  // Sheet 1: Executive Summary & KPIs
-  const summarySheet = workbook.addWorksheet('Executive Summary');
-  summarySheet.columns = [
-    { header: 'Key Performance Indicator', key: 'kpi', width: 35 },
-    { header: 'Current Value (₹ / Litres)', key: 'val', width: 25 },
-    { header: 'Status / Notes', key: 'notes', width: 40 },
-  ];
-  summarySheet.getRow(1).fill = headerFill;
-  summarySheet.getRow(1).font = headerFont;
+  // Sheet: Executive Summary & KPIs (in ALL, FINANCIAL)
+  if (isAll || isFin) {
+    const summarySheet = workbook.addWorksheet('Executive Summary');
+    summarySheet.columns = [
+      { header: 'Key Performance Indicator', key: 'kpi', width: 35 },
+      { header: 'Current Value (₹ / Litres)', key: 'val', width: 25 },
+      { header: 'Status / Notes', key: 'notes', width: 40 },
+    ];
+    summarySheet.getRow(1).fill = headerFill;
+    summarySheet.getRow(1).font = headerFont;
 
-  summarySheet.addRows([
-    { kpi: 'Total Shift Cash Received', val: `₹${cashData.summary.totalShiftCash.toLocaleString('en-IN')}`, notes: 'Cumulative physical cash collected from shifts' },
-    { kpi: 'Total Credit Cash Repayments', val: `₹${cashData.summary.totalCreditCashRepayments.toLocaleString('en-IN')}`, notes: 'Repayments deposited into cash drawer' },
-    { kpi: 'Owner Cash Collections', val: `₹${cashData.summary.totalOwnerCollected.toLocaleString('en-IN')}`, notes: 'Physical cash withdrawn by station owner' },
-    { kpi: 'Drawer Cash Balance', val: `₹${cashData.summary.remainingExpectedCash.toLocaleString('en-IN')}`, notes: 'Expected physical cash in drawer' },
-    { kpi: 'Total Outstanding Credit Due', val: `₹${creditData.totalOutstanding.toLocaleString('en-IN')}`, notes: 'Active customer credit balance' },
-    { kpi: 'Petrol (MS) Available Stock', val: `${fuelData.summary.petrolStock.toLocaleString('en-IN')} L`, notes: 'Main underground tank 1 volume' },
-    { kpi: 'Diesel (HSD) Available Stock', val: `${fuelData.summary.dieselStock.toLocaleString('en-IN')} L`, notes: 'Main underground tank 2 volume' },
-    { kpi: 'Total Operational Expenses', val: `₹${expenseData.totalAmount.toLocaleString('en-IN')}`, notes: 'Recorded station overheads & utilities' },
-  ]);
+    summarySheet.addRows([
+      { kpi: 'Total Shift Cash Received', val: `₹${cashData.summary.totalShiftCash.toLocaleString('en-IN')}`, notes: 'Physical cash collected from shifts in period' },
+      { kpi: 'Total Credit Cash Repayments', val: `₹${cashData.summary.totalCreditCashRepayments.toLocaleString('en-IN')}`, notes: 'Repayments deposited into cash drawer in period' },
+      { kpi: 'Owner Cash Collections', val: `₹${cashData.summary.totalOwnerCollected.toLocaleString('en-IN')}`, notes: 'Physical cash withdrawn by station owner in period' },
+      { kpi: 'Drawer Cash Balance', val: `₹${cashData.summary.remainingExpectedCash.toLocaleString('en-IN')}`, notes: 'Expected physical cash in drawer' },
+      { kpi: 'Total Outstanding Credit Due', val: `₹${creditData.totalOutstanding.toLocaleString('en-IN')}`, notes: 'Active customer credit balance' },
+      { kpi: 'Petrol (MS) Available Stock', val: `${fuelData.summary.petrolStock.toLocaleString('en-IN')} L`, notes: 'Main underground tank 1 volume' },
+      { kpi: 'Diesel (HSD) Available Stock', val: `${fuelData.summary.dieselStock.toLocaleString('en-IN')} L`, notes: 'Main underground tank 2 volume' },
+      { kpi: 'Total Operational Expenses', val: `₹${expenseData.totalAmount.toLocaleString('en-IN')}`, notes: 'Recorded station overheads & utilities in period' },
+    ]);
+  }
 
-  // Sheet 2: Central Cash Ledger
-  const cashSheet = workbook.addWorksheet('Cash Ledger');
-  cashSheet.columns = [
-    { header: 'Transaction ID', key: 'id', width: 20 },
-    { header: 'Type', key: 'type', width: 22 },
-    { header: 'Amount (₹)', key: 'amount', width: 16 },
-    { header: 'Inflow / Outflow', key: 'inflow', width: 18 },
-    { header: 'Notes / Description', key: 'notes', width: 40 },
-    { header: 'Recorded By', key: 'recorded_by', width: 22 },
-    { header: 'Occurred At', key: 'time', width: 22 },
-  ];
-  cashSheet.getRow(1).fill = headerFill;
-  cashSheet.getRow(1).font = headerFont;
+  // Sheet: Central Cash Ledger (in ALL, FINANCIAL)
+  if (isAll || isFin) {
+    const cashSheet = workbook.addWorksheet('Cash Ledger');
+    cashSheet.columns = [
+      { header: 'Transaction ID', key: 'id', width: 20 },
+      { header: 'Type', key: 'type', width: 22 },
+      { header: 'Amount (₹)', key: 'amount', width: 16 },
+      { header: 'Inflow / Outflow', key: 'inflow', width: 18 },
+      { header: 'Notes / Description', key: 'notes', width: 40 },
+      { header: 'Recorded By', key: 'recorded_by', width: 22 },
+      { header: 'Occurred At', key: 'time', width: 22 },
+    ];
+    cashSheet.getRow(1).fill = headerFill;
+    cashSheet.getRow(1).font = headerFont;
 
-  cashData.entries.forEach((e) => {
-    cashSheet.addRow({
-      id: e.id,
-      type: e.entry_type,
-      amount: e.amount,
-      inflow: e.amount >= 0 ? 'INFLOW (+)' : 'OUTFLOW (-)',
-      notes: e.notes || e.title,
-      recorded_by: e.creator_name || 'Staff',
-      time: e.occurred_at,
+    cashData.entries.forEach((e) => {
+      cashSheet.addRow({
+        id: e.id,
+        type: e.entry_type,
+        amount: e.amount,
+        inflow: e.amount >= 0 ? 'INFLOW (+)' : 'OUTFLOW (-)',
+        notes: e.notes || e.title,
+        recorded_by: e.creator_name || 'Staff',
+        time: e.occurred_at,
+      });
     });
-  });
+  }
 
-  // Sheet 3: Fuel Inventory Tanks
-  const tankSheet = workbook.addWorksheet('Fuel Tanks Overview');
-  tankSheet.columns = [
-    { header: 'Tank Name', key: 'name', width: 28 },
-    { header: 'Fuel Product', key: 'fuel', width: 15 },
-    { header: 'Capacity (L)', key: 'cap', width: 15 },
-    { header: 'Current Stock (L)', key: 'stock', width: 18 },
-    { header: 'Level %', key: 'level', width: 12 },
-    { header: 'Selling Rate (₹/L)', key: 'rate', width: 18 },
-    { header: 'Stock Valuation (₹)', key: 'val', width: 22 },
-  ];
-  tankSheet.getRow(1).fill = headerFill;
-  tankSheet.getRow(1).font = headerFont;
+  // Sheet: Fuel Inventory Tanks (in ALL, FUEL)
+  if (isAll || isFuel) {
+    const tankSheet = workbook.addWorksheet('Fuel Tanks Overview');
+    tankSheet.columns = [
+      { header: 'Tank Name', key: 'name', width: 28 },
+      { header: 'Fuel Product', key: 'fuel', width: 15 },
+      { header: 'Capacity (L)', key: 'cap', width: 15 },
+      { header: 'Current Stock (L)', key: 'stock', width: 18 },
+      { header: 'Level %', key: 'level', width: 12 },
+      { header: 'Selling Rate (₹/L)', key: 'rate', width: 18 },
+      { header: 'Stock Valuation (₹)', key: 'val', width: 22 },
+    ];
+    tankSheet.getRow(1).fill = headerFill;
+    tankSheet.getRow(1).font = headerFont;
 
-  fuelData.tanks.forEach((t) => {
-    tankSheet.addRow({
-      name: t.name,
-      fuel: t.fuel_type,
-      cap: t.capacity_litres,
-      stock: t.current_stock_litres,
-      level: `${t.capacity_percentage}%`,
-      rate: t.price_per_litre,
-      val: t.stock_valuation,
+    fuelData.tanks.forEach((t) => {
+      tankSheet.addRow({
+        name: t.name,
+        fuel: t.fuel_type,
+        cap: t.capacity_litres,
+        stock: t.current_stock_litres,
+        level: `${t.capacity_percentage}%`,
+        rate: t.price_per_litre,
+        val: t.stock_valuation,
+      });
     });
-  });
+  }
 
-  // Sheet 4: Fuel Stock Movements
-  const fuelTxSheet = workbook.addWorksheet('Fuel Movements');
-  fuelTxSheet.columns = [
-    { header: 'Transaction ID', key: 'id', width: 20 },
-    { header: 'Product', key: 'fuel', width: 12 },
-    { header: 'Movement Type', key: 'type', width: 20 },
-    { header: 'Volume (Litres)', key: 'vol', width: 16 },
-    { header: 'Notes & Ref', key: 'notes', width: 45 },
-    { header: 'Logged By', key: 'by', width: 20 },
-    { header: 'Timestamp', key: 'time', width: 22 },
-  ];
-  fuelTxSheet.getRow(1).fill = headerFill;
-  fuelTxSheet.getRow(1).font = headerFont;
+  // Sheet: Fuel Stock Movements (in ALL, FUEL)
+  if (isAll || isFuel) {
+    const fuelTxSheet = workbook.addWorksheet('Fuel Movements');
+    fuelTxSheet.columns = [
+      { header: 'Transaction ID', key: 'id', width: 20 },
+      { header: 'Product', key: 'fuel', width: 12 },
+      { header: 'Movement Type', key: 'type', width: 20 },
+      { header: 'Volume (Litres)', key: 'vol', width: 16 },
+      { header: 'Notes & Ref', key: 'notes', width: 45 },
+      { header: 'Logged By', key: 'by', width: 20 },
+      { header: 'Timestamp', key: 'time', width: 22 },
+    ];
+    fuelTxSheet.getRow(1).fill = headerFill;
+    fuelTxSheet.getRow(1).font = headerFont;
 
-  fuelData.transactions.forEach((tx) => {
-    fuelTxSheet.addRow({
-      id: tx.id,
-      fuel: tx.fuel_type,
-      type: tx.transaction_type,
-      vol: tx.quantity_litres,
-      notes: tx.notes || '',
-      by: tx.creator_name || 'Staff',
-      time: tx.created_at,
+    fuelTx.forEach((tx) => {
+      fuelTxSheet.addRow({
+        id: tx.id,
+        fuel: tx.fuel_type,
+        type: tx.transaction_type,
+        vol: tx.quantity_litres,
+        notes: tx.notes || '',
+        by: tx.creator_name || 'Staff',
+        time: tx.created_at,
+      });
     });
-  });
+  }
 
-  // Sheet 5: Fuel Price Timeline
-  const priceSheet = workbook.addWorksheet('Fuel Price Timeline');
-  priceSheet.columns = [
-    { header: 'Price ID', key: 'id', width: 20 },
-    { header: 'Fuel Product', key: 'fuel', width: 15 },
-    { header: 'Selling Rate (₹/L)', key: 'rate', width: 20 },
-    { header: 'Effective Timestamp', key: 'effective', width: 24 },
-  ];
-  priceSheet.getRow(1).fill = headerFill;
-  priceSheet.getRow(1).font = headerFont;
+  // Sheet: Fuel Price Timeline (in ALL, FUEL)
+  if (isAll || isFuel) {
+    const priceSheet = workbook.addWorksheet('Fuel Price Timeline');
+    priceSheet.columns = [
+      { header: 'Price ID', key: 'id', width: 20 },
+      { header: 'Fuel Product', key: 'fuel', width: 15 },
+      { header: 'Selling Rate (₹/L)', key: 'rate', width: 20 },
+      { header: 'Effective Timestamp', key: 'effective', width: 24 },
+    ];
+    priceSheet.getRow(1).fill = headerFill;
+    priceSheet.getRow(1).font = headerFont;
 
-  priceHistory.forEach((p) => {
-    priceSheet.addRow({
-      id: p.id,
-      fuel: p.fuel_type,
-      rate: p.price_per_litre,
-      effective: p.effective_at,
+    priceHistory.forEach((p) => {
+      priceSheet.addRow({
+        id: p.id,
+        fuel: p.fuel_type,
+        rate: p.price_per_litre,
+        effective: p.effective_at,
+      });
     });
-  });
+  }
 
-  // Sheet 6: Credit Customers
-  const credSheet = workbook.addWorksheet('Credit Customer Accounts');
-  credSheet.columns = [
-    { header: 'Account ID', key: 'id', width: 18 },
-    { header: 'Customer / Company Name', key: 'name', width: 30 },
-    { header: 'Phone', key: 'phone', width: 18 },
-    { header: 'Status', key: 'status', width: 12 },
-    { header: 'Outstanding Due (₹)', key: 'due', width: 20 },
-    { header: 'Total Credit Drawn (₹)', key: 'drawn', width: 22 },
-    { header: 'Total Repaid (₹)', key: 'repaid', width: 18 },
-  ];
-  credSheet.getRow(1).fill = headerFill;
-  credSheet.getRow(1).font = headerFont;
+  // Sheet: Credit Customers (in ALL, CREDIT)
+  if (isAll || isCredit) {
+    const credSheet = workbook.addWorksheet('Credit Customer Accounts');
+    credSheet.columns = [
+      { header: 'Account ID', key: 'id', width: 18 },
+      { header: 'Customer / Company Name', key: 'name', width: 30 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Outstanding Due (₹)', key: 'due', width: 20 },
+      { header: 'Total Credit Drawn (₹)', key: 'drawn', width: 22 },
+      { header: 'Total Repaid (₹)', key: 'repaid', width: 18 },
+    ];
+    credSheet.getRow(1).fill = headerFill;
+    credSheet.getRow(1).font = headerFont;
 
-  creditData.customers.forEach((c) => {
-    credSheet.addRow({
-      id: c.id,
-      name: c.name,
-      phone: c.phone || '',
-      status: c.status,
-      due: c.outstanding_balance,
-      drawn: c.total_credit_given,
-      repaid: c.total_repayments,
+    creditData.customers.forEach((c) => {
+      credSheet.addRow({
+        id: c.id,
+        name: c.name,
+        phone: c.phone || '',
+        status: c.status,
+        due: c.outstanding_balance,
+        drawn: c.total_credit_given,
+        repaid: c.total_repayments,
+      });
     });
-  });
+  }
 
-  // Sheet 7: Operating Expenses
-  const expSheet = workbook.addWorksheet('Operating Expenses');
-  expSheet.columns = [
-    { header: 'Expense ID', key: 'id', width: 18 },
-    { header: 'Category', key: 'cat', width: 25 },
-    { header: 'Description', key: 'desc', width: 40 },
-    { header: 'Amount (₹)', key: 'amt', width: 16 },
-    { header: 'Voucher Date', key: 'date', width: 15 },
-    { header: 'Logged By', key: 'by', width: 20 },
-  ];
-  expSheet.getRow(1).fill = headerFill;
-  expSheet.getRow(1).font = headerFont;
+  // Sheet: Operating Expenses (in ALL, FINANCIAL)
+  if (isAll || isFin) {
+    const expSheet = workbook.addWorksheet('Operating Expenses');
+    expSheet.columns = [
+      { header: 'Expense ID', key: 'id', width: 18 },
+      { header: 'Category', key: 'cat', width: 25 },
+      { header: 'Description', key: 'desc', width: 40 },
+      { header: 'Amount (₹)', key: 'amt', width: 16 },
+      { header: 'Voucher Date', key: 'date', width: 15 },
+      { header: 'Logged By', key: 'by', width: 20 },
+    ];
+    expSheet.getRow(1).fill = headerFill;
+    expSheet.getRow(1).font = headerFont;
 
-  expenseData.expenses.forEach((e) => {
-    expSheet.addRow({
-      id: e.id,
-      cat: e.category,
-      desc: e.description,
-      amt: e.amount,
-      date: e.expense_date,
-      by: e.creator_name || 'Staff',
+    expenseData.expenses.forEach((e) => {
+      expSheet.addRow({
+        id: e.id,
+        cat: e.category,
+        desc: e.description,
+        amt: e.amount,
+        date: e.expense_date,
+        by: e.creator_name || 'Staff',
+      });
     });
-  });
+  }
 
-  // Sheet 8: Staff Employee Master
-  const empSheet = workbook.addWorksheet('Employee Staff Master');
-  empSheet.columns = [
-    { header: 'Employee ID', key: 'id', width: 18 },
-    { header: 'Full Name', key: 'name', width: 25 },
-    { header: 'Phone', key: 'phone', width: 18 },
-    { header: 'Status', key: 'status', width: 12 },
-    { header: 'Notes', key: 'notes', width: 30 },
-  ];
-  empSheet.getRow(1).fill = headerFill;
-  empSheet.getRow(1).font = headerFont;
+  // Sheet: Staff Employee Master (in ALL)
+  if (isAll) {
+    const empSheet = workbook.addWorksheet('Employee Staff Master');
+    empSheet.columns = [
+      { header: 'Employee ID', key: 'id', width: 18 },
+      { header: 'Full Name', key: 'name', width: 25 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Notes', key: 'notes', width: 30 },
+    ];
+    empSheet.getRow(1).fill = headerFill;
+    empSheet.getRow(1).font = headerFont;
 
-  employees.forEach((emp) => {
-    empSheet.addRow({
-      id: emp.id,
-      name: emp.name,
-      phone: emp.phone || '',
-      status: emp.status,
-      notes: emp.notes || '',
+    employees.forEach((emp) => {
+      empSheet.addRow({
+        id: emp.id,
+        name: emp.name,
+        phone: emp.phone || '',
+        status: emp.status,
+        notes: emp.notes || '',
+      });
     });
-  });
+  }
 
-  // Sheet 9: Shifts & Nozzle Operations
-  const shifts = await getShifts();
+  // Sheet: Shifts & Nozzle Operations (in ALL, FINANCIAL, FUEL, CREDIT)
   const shiftSheet = workbook.addWorksheet('Shift & Nozzle Operations');
   shiftSheet.columns = [
     { header: 'Shift ID', key: 'id', width: 22 },
@@ -307,11 +342,25 @@ export async function generateMultiSheetExcelWorkbook(): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
-export async function generateCsvExport(scope: string = 'ALL'): Promise<string> {
-  const cashData = await getCashLedger();
+export async function generateCsvExport(options?: ExportOptions | string): Promise<string> {
+  const scope = typeof options === 'string' ? options : options?.scope || 'ALL';
+  const startDate = typeof options === 'object' ? options?.startDate : undefined;
+  const endDate = typeof options === 'object' ? options?.endDate : undefined;
+
+  const isAll = scope === 'ALL';
+  const isFin = scope === 'FINANCIAL';
+  const isFuel = scope === 'FUEL';
+  const isCredit = scope === 'CREDIT';
+
+  const cashData = await getCashLedger(undefined, undefined, startDate, endDate);
   const fuelData = await getFuelStockOverview();
   const creditData = await getCreditCustomers();
-  const expenseData = await getExpenses();
+  const expenseData = await getExpenses(undefined, startDate, endDate);
+  const csvShifts = await getShifts(undefined, undefined, startDate, endDate);
+
+  let fuelTx = fuelData.transactions;
+  if (startDate) fuelTx = fuelTx.filter((t) => t.created_at.slice(0, 10) >= startDate);
+  if (endDate) fuelTx = fuelTx.filter((t) => t.created_at.slice(0, 10) <= endDate);
 
   const lines: string[] = [];
 
@@ -323,75 +372,86 @@ export async function generateCsvExport(scope: string = 'ALL'): Promise<string> 
 
   lines.push('=== OMEGA FUELS MASTER TRANSACTION EXPORT ===');
   lines.push(`Generated At,${new Date().toISOString()}`);
+  if (startDate || endDate) {
+    lines.push(`Date Filter,${startDate || 'Start'} to ${endDate || 'Latest'}`);
+  }
+  lines.push(`Scope,${scope}`);
   lines.push('');
 
   // 1. Central Cash Ledger
-  lines.push('--- CENTRAL CASH LEDGER ---');
-  lines.push('ID,Type,Amount (INR),Inflow/Outflow,Notes,Recorded By,Timestamp');
-  cashData.entries.forEach((e) => {
-    lines.push([
-      escapeCsv(e.id),
-      escapeCsv(e.entry_type),
-      e.amount,
-      escapeCsv(e.amount >= 0 ? 'INFLOW' : 'OUTFLOW'),
-      escapeCsv(e.notes || e.title),
-      escapeCsv(e.creator_name || 'Staff'),
-      escapeCsv(e.occurred_at),
-    ].join(','));
-  });
-  lines.push('');
+  if (isAll || isFin) {
+    lines.push('--- CENTRAL CASH LEDGER ---');
+    lines.push('ID,Type,Amount (INR),Inflow/Outflow,Notes,Recorded By,Timestamp');
+    cashData.entries.forEach((e) => {
+      lines.push([
+        escapeCsv(e.id),
+        escapeCsv(e.entry_type),
+        e.amount,
+        escapeCsv(e.amount >= 0 ? 'INFLOW' : 'OUTFLOW'),
+        escapeCsv(e.notes || e.title),
+        escapeCsv(e.creator_name || 'Staff'),
+        escapeCsv(e.occurred_at),
+      ].join(','));
+    });
+    lines.push('');
+  }
 
   // 2. Fuel Stock Movements
-  lines.push('--- FUEL STOCK MOVEMENTS ---');
-  lines.push('ID,Product,Movement Type,Volume (Litres),Notes,Logged By,Timestamp');
-  fuelData.transactions.forEach((t) => {
-    lines.push([
-      escapeCsv(t.id),
-      escapeCsv(t.fuel_type),
-      escapeCsv(t.transaction_type),
-      t.quantity_litres,
-      escapeCsv(t.notes || ''),
-      escapeCsv(t.creator_name || 'Staff'),
-      escapeCsv(t.created_at),
-    ].join(','));
-  });
-  lines.push('');
+  if (isAll || isFuel) {
+    lines.push('--- FUEL STOCK MOVEMENTS ---');
+    lines.push('ID,Product,Movement Type,Volume (Litres),Notes,Logged By,Timestamp');
+    fuelTx.forEach((t) => {
+      lines.push([
+        escapeCsv(t.id),
+        escapeCsv(t.fuel_type),
+        escapeCsv(t.transaction_type),
+        t.quantity_litres,
+        escapeCsv(t.notes || ''),
+        escapeCsv(t.creator_name || 'Staff'),
+        escapeCsv(t.created_at),
+      ].join(','));
+    });
+    lines.push('');
+  }
 
   // 3. Credit Customer Balances
-  lines.push('--- CREDIT CUSTOMER BALANCES ---');
-  lines.push('ID,Name,Phone,Status,Outstanding Due (INR),Total Drawn (INR),Total Repaid (INR)');
-  creditData.customers.forEach((c) => {
-    lines.push([
-      escapeCsv(c.id),
-      escapeCsv(c.name),
-      escapeCsv(c.phone || ''),
-      escapeCsv(c.status),
-      c.outstanding_balance,
-      c.total_credit_given,
-      c.total_repayments,
-    ].join(','));
-  });
-  lines.push('');
+  if (isAll || isCredit) {
+    lines.push('--- CREDIT CUSTOMER BALANCES ---');
+    lines.push('ID,Name,Phone,Status,Outstanding Due (INR),Total Drawn (INR),Total Repaid (INR)');
+    creditData.customers.forEach((c) => {
+      lines.push([
+        escapeCsv(c.id),
+        escapeCsv(c.name),
+        escapeCsv(c.phone || ''),
+        escapeCsv(c.status),
+        c.outstanding_balance,
+        c.total_credit_given,
+        c.total_repayments,
+      ].join(','));
+    });
+    lines.push('');
+  }
 
   // 4. Operating Expenses
-  lines.push('--- OPERATING EXPENSES ---');
-  lines.push('ID,Category,Description,Amount (INR),Expense Date,Logged By');
-  expenseData.expenses.forEach((x) => {
-    lines.push([
-      escapeCsv(x.id),
-      escapeCsv(x.category),
-      escapeCsv(x.description),
-      x.amount,
-      escapeCsv(x.expense_date),
-      escapeCsv(x.creator_name || 'Staff'),
-    ].join(','));
-  });
-  lines.push('');
+  if (isAll || isFin) {
+    lines.push('--- OPERATING EXPENSES ---');
+    lines.push('ID,Category,Description,Amount (INR),Expense Date,Logged By');
+    expenseData.expenses.forEach((x) => {
+      lines.push([
+        escapeCsv(x.id),
+        escapeCsv(x.category),
+        escapeCsv(x.description),
+        x.amount,
+        escapeCsv(x.expense_date),
+        escapeCsv(x.creator_name || 'Staff'),
+      ].join(','));
+    });
+    lines.push('');
+  }
 
   // 5. Shift & Nozzle Operations
   lines.push('--- SHIFT & NOZZLE READINGS ---');
   lines.push('Shift ID,Date,Operator,Shift Type,Nozzle,Fuel,Opening Meter,Closing Meter,Litres Sold,Rate (INR),Fuel Sales (INR),Expected Total (INR),Cash (INR),Digital (INR),Credit (INR),Repay Cash (INR),Repay Digital (INR),Total Cash Drawer (INR),Variance (INR)');
-  const csvShifts = await getShifts();
   csvShifts.forEach((s) => {
     if (s.nozzle_readings && s.nozzle_readings.length > 0) {
       s.nozzle_readings.forEach((nr) => {

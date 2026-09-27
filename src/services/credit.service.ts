@@ -528,3 +528,50 @@ export async function getCreditPaymentsForShift(shiftId: string) {
       created_at: t.transaction_at,
     }));
 }
+
+/**
+ * Retrieve credit transactions with optional date range and customer filtering
+ */
+export async function getCreditTransactions(
+  startDate?: string,
+  endDate?: string,
+  customerId?: string
+): Promise<CreditTransactionWithMeta[]> {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
+    try {
+      const supabase = await createClient();
+      let query = supabase
+        .from('credit_transactions')
+        .select('*, customer:credit_customers(name), profile:created_by(name)')
+        .order('transaction_at', { ascending: false });
+
+      if (customerId) query = query.eq('customer_id', customerId);
+      if (startDate) query = query.gte('transaction_at', `${startDate}T00:00:00.000Z`);
+      if (endDate) query = query.lte('transaction_at', `${endDate}T23:59:59.999Z`);
+
+      const { data, error } = await query;
+      if (!error && data) {
+        return data.map((d: any) => ({
+          ...d,
+          amount: Number(d.amount),
+          customer_name: d.customer?.name || 'Customer',
+          creator_name: d.profile?.name || 'Staff',
+        }));
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  let results = [...localCreditTransactions];
+  if (customerId) {
+    results = results.filter((t) => t.customer_id === customerId);
+  }
+  if (startDate) {
+    results = results.filter((t) => t.transaction_at.slice(0, 10) >= startDate);
+  }
+  if (endDate) {
+    results = results.filter((t) => t.transaction_at.slice(0, 10) <= endDate);
+  }
+  return results;
+}

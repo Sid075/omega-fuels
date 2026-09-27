@@ -56,7 +56,9 @@ let localOwnerCollections: OwnerCashCollection[] = [
 
 export async function getCashLedger(
   dateFilter?: string,
-  typeFilter?: CashLedgerEntryType
+  typeFilter?: CashLedgerEntryType,
+  startDate?: string,
+  endDate?: string
 ): Promise<{ entries: CashLedgerItemWithMeta[]; summary: ReturnType<typeof calculateCashLedgerSummary> }> {
   let entries: CashLedgerItemWithMeta[] = [];
   let entriesFromDb: CashLedgerEntry[] = [];
@@ -73,6 +75,8 @@ export async function getCashLedger(
         .order('occurred_at', { ascending: false });
 
       if (typeFilter) query = query.eq('entry_type', typeFilter);
+      if (startDate) query = query.gte('occurred_at', `${startDate}T00:00:00.000Z`);
+      if (endDate) query = query.lte('occurred_at', `${endDate}T23:59:59.999Z`);
 
       const { data, error } = await query;
       if (!error && data) {
@@ -109,10 +113,15 @@ export async function getCashLedger(
   if (dateFilter) {
     entries = entries.filter((e) => e.occurred_at.startsWith(dateFilter));
   }
+  if (startDate) {
+    entries = entries.filter((e) => e.occurred_at.slice(0, 10) >= startDate);
+  }
+  if (endDate) {
+    entries = entries.filter((e) => e.occurred_at.slice(0, 10) <= endDate);
+  }
 
-  // Calculate summary strictly using our financial engine based on all entries
-  const allEntriesForSummary = entriesFromDb.length > 0 ? entriesFromDb : localLedgerEntries;
-  const summary = calculateCashLedgerSummary(allEntriesForSummary);
+  // Calculate summary strictly using our financial engine based on active/filtered entries
+  const summary = calculateCashLedgerSummary(entries);
 
   return { entries, summary };
 }
